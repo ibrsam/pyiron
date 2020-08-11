@@ -30,7 +30,6 @@ class FHIAims(AtomisticGenericJob):
     
     def write_input(self):
         # methods, called externally
-        print("inside FHIAims write_inpute")
         self.input.write(structure=self.structure, working_directory=self.working_directory)
 
 
@@ -120,7 +119,6 @@ potential          tight  # Options: light, tight, really_tight
 
     def get_string_lst(self):
         settings = self["potential"]
-        print("get_string_lst.settings=",settings)
         lines=[]
         for elem, atom_num in self._chem_symb_lst:
             file_name = "{atom_num}_{elem}_default".format(atom_num=atom_num, elem=elem)
@@ -138,24 +136,13 @@ class FHIAimsInput:
         self.control_potential = FHIAimsControlPotential()
 
     def write(self, structure, working_directory):
-        print("inside FHIAimsInput.write_input")
-        print("Structure=")
-        print(structure)
-        print("working_directory=",working_directory)
-
-
         self.control_potential.set_structure(structure)
         control_in_filename = os.path.join(working_directory, "control.in")
         control_in_lst = self.control_input.get_string_lst()
-        print("DEBUG: control_in_filename=",control_in_filename)
-        print("DEBUG: control_input: \n", "".join(control_in_lst))
         control_in_lst += self.control_potential.get_string_lst()
-
 
         with open(control_in_filename, "w") as f:
             print("".join(control_in_lst), file=f)
-
-        #TODO: write geometry.in
 
         pbc = structure.pbc
         is_periodic = np.all(pbc)
@@ -254,6 +241,9 @@ def collect_output(output_file):
             stresses_lst.append(current_stresses)
 
     output_dict= {'energy_pot': free_energies_list, 'forces': forces_lst}
+    #TODO: check
+    if len(stresses_lst)>0:
+        output_dict["stresses"] = stresses_lst
 
     return output_dict
 

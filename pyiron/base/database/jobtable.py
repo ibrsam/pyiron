@@ -14,7 +14,7 @@ The Jobtable module provides a set of top level functions to interact with the d
 
 __author__ = "Jan Janssen"
 __copyright__ = (
-    "Copyright 2019, Max-Planck-Institut für Eisenforschung GmbH - "
+    "Copyright 2020, Max-Planck-Institut für Eisenforschung GmbH - "
     "Computational Materials Design (CM) Department"
 )
 __version__ = "1.0"
@@ -214,9 +214,6 @@ def job_table(
     if full_table:
         pandas.set_option('display.max_rows', None)
         pandas.set_option('display.max_columns', None)
-    else:
-        pandas.reset_option('display.max_rows')
-        pandas.reset_option('display.max_columns')
     pandas.set_option("display.max_colwidth", max_colwidth)
     df = pandas.DataFrame(job_dict)
     if len(job_dict) == 0:
@@ -352,7 +349,7 @@ def get_job_id(database, sql_query, user, project_path, job_specifier):
         return job_dict[0]["id"]
     else:
         raise ValueError(
-            "job name '{0}' in this project is not unique".format(job_dict)
+            "job name '{0}' in this project '{1}' is not unique '{2}".format(job_specifier, project_path, job_dict)
         )
 
 

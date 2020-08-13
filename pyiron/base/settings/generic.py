@@ -19,7 +19,7 @@ The settings file provides the attributes of the configuration as properties.
 
 __author__ = "Jan Janssen"
 __copyright__ = (
-    "Copyright 2019, Max-Planck-Institut für Eisenforschung GmbH - "
+    "Copyright 2020, Max-Planck-Institut für Eisenforschung GmbH - "
     "Computational Materials Design (CM) Department"
 )
 __version__ = "1.0"
@@ -185,12 +185,6 @@ class Settings(with_metaclass(Singleton)):
             list: path of paths
         """
         return self._configuration["resource_paths"]
-
-    def __del__(self):
-        """
-        Close database connection
-        """
-        self.close_connection()
 
     def open_connection(self):
         """

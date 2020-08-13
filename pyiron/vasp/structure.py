@@ -9,7 +9,7 @@ import warnings
 
 __author__ = "Sudarsan Surendralal"
 __copyright__ = (
-    "Copyright 2019, Max-Planck-Institut für Eisenforschung GmbH - "
+    "Copyright 2020, Max-Planck-Institut für Eisenforschung GmbH - "
     "Computational Materials Design (CM) Department"
 )
 __version__ = "1.0"
@@ -332,7 +332,7 @@ def vasp_sorter(structure):
         indices = structure.select_index(species)
         for i in indices:
             sorted_indices.append(i)
-    return sorted_indices
+    return np.array(sorted_indices)
 
 
 def manip_contcar(filename, new_filename, add_pos):

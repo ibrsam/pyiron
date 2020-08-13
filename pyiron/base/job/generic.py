@@ -30,7 +30,7 @@ Generic Job class extends the JobCore class with all the functionality to run th
 
 __author__ = "Joerg Neugebauer, Jan Janssen"
 __copyright__ = (
-    "Copyright 2019, Max-Planck-Institut für Eisenforschung GmbH - "
+    "Copyright 2020, Max-Planck-Institut für Eisenforschung GmbH - "
     "Computational Materials Design (CM) Department"
 )
 __version__ = "1.0"
@@ -154,6 +154,7 @@ class GenericJob(JobCore):
         super(GenericJob, self).__init__(project, job_name)
         self.__name__ = "GenericJob"
         self.__version__ = "0.4"
+        self.__hdf_version__ = "0.1.0"
         self._server = Server()
         self._logger = s.logger
         self._executable = None
@@ -166,14 +167,12 @@ class GenericJob(JobCore):
         self._exclude_groups_hdf = list()
         self._process = None
         self._compress_by_default = False
+        self._python_only_job = False
         self.interactive_cache = None
+        self.error = GenericError(job=self)
 
         for sig in intercepted_signals:
             signal.signal(sig, self.signal_intercept)
-
-    @property
-    def python_execution_process(self):
-        return self._process
 
     @property
     def version(self):
@@ -491,11 +490,14 @@ class GenericJob(JobCore):
             new_job_name (str): The new name to assign the duplicate job. Required if the project is `None` or the same
                 project as the copied job. (Default is None, try to keep the same name.)
             input_only (bool): [True/False] Whether to copy only the input. (Default is False.)
-            new_database_entry (bool): [True/False] Whether to create a new database entry. (Default is True.)
+            new_database_entry (bool): [True/False] Whether to create a new database entry. If input_only is True then
+                new_database_entry is False. (Default is True.)
 
         Returns:
             GenericJob: GenericJob object pointing to the new location.
         """
+        if input_only and new_database_entry:
+            new_database_entry = False
         if project is None and new_job_name is None:
             raise ValueError("copy_to requires either a new project or a new_job_name.")
 
@@ -523,10 +525,16 @@ class GenericJob(JobCore):
             new_generic_job = self.copy()
             new_generic_job.reset_job_id()
             new_generic_job._name = new_job_name
-            new_generic_job.project_hdf5.copy_to(new_location, maintain_name=False)
+            new_generic_job.project_hdf5.copy_to(
+                destination=new_location,
+                maintain_name=False
+            )
             new_generic_job.project_hdf5 = new_location
         else:
-            new_generic_job = super(GenericJob, self).copy_to(project, new_database_entry=new_database_entry)
+            new_generic_job = super(GenericJob, self).copy_to(
+                project=project,
+                new_database_entry=new_database_entry
+            )
             new_generic_job.reset_job_id(job_id=new_generic_job.job_id)
             new_generic_job.from_hdf()
 
@@ -637,17 +645,24 @@ class GenericJob(JobCore):
         self._job_id = job_id
         self._status = JobStatus(db=self.project.db, job_id=self._job_id)
 
-    def run(self, run_again=False, repair=False, debug=False, run_mode=None):
+    def run(self, delete_existing_job=False, repair=False, debug=False, run_mode=None, run_again=False):
         """
         This is the main run function, depending on the job status ['initialized', 'created', 'submitted', 'running',
         'collect','finished', 'refresh', 'suspended'] the corresponding run mode is chosen.
 
         Args:
-            run_again (bool): Delete the existing job and run the simulation again.
+            delete_existing_job (bool): Delete the existing job and run the simulation again.
             repair (bool): Set the job status to created and run the simulation again.
             debug (bool): Debug Mode - defines the log level of the subprocess the job is executed in.
             run_mode (str): ['modal', 'non_modal', 'queue', 'manual'] overwrites self.server.run_mode
+            run_again (bool): Same as delete_existing_job (deprecated)
         """
+        if run_again:
+            warnings.warn('run_again is deprecated as of vers. 0.3.0.'
+                          + 'It is not guaranteed to be in service in vers. 0.4.0.'
+                          + 'Either delete the job via job.remove() or via pr.create_job(delete_existing_job=True).',
+                          DeprecationWarning)
+            delete_existing_job=True
         try:
             self._logger.info(
                 "run {}, status: {}".format(self.job_info_str, self.status)
@@ -655,7 +670,7 @@ class GenericJob(JobCore):
             status = self.status.string
             if run_mode is not None:
                 self.server.run_mode = run_mode
-            if run_again and self.job_id:
+            if delete_existing_job and self.job_id:
                 self._logger.info("run repair " + str(self.job_id))
                 status = "initialized"
                 master_id, parent_id = self.master_id, self.parent_id
@@ -688,7 +703,7 @@ class GenericJob(JobCore):
             elif status == "busy":
                 self._run_if_busy()
             elif status == "finished":
-                self._run_if_finished(run_again=run_again)
+                self._run_if_finished(delete_existing_job=delete_existing_job)
         except Exception:
             self.drop_status_to_aborted()
             raise
@@ -751,6 +766,8 @@ class GenericJob(JobCore):
                 self._logger.warning("Job aborted")
                 self._logger.warning(e.output)
                 self.status.aborted = True
+                if self.job_id is not None:
+                    self.project.db.item_update(self._runtime(), self.job_id)
                 error_file = posixpath.join(
                     self.project_hdf5.working_directory, "error.msg"
                 )
@@ -771,15 +788,15 @@ class GenericJob(JobCore):
         if job_crashed:
             self.status.aborted = True
 
-    def transfer_from_remote(self, delete_remote=True):
+    def transfer_from_remote(self):
         s.queue_adapter.get_job_from_remote(
             working_directory='/'.join(self.working_directory.split('/')[:-1]),
-            delete_remote=delete_remote
+            delete_remote=s.queue_adapter.ssh_delete_file_on_remote
         )
         s.queue_adapter.transfer_file_to_remote(
             file=self.project_hdf5.file_name,
             transfer_back=True,
-            delete_remote=True,
+            delete_remote=s.queue_adapter.ssh_delete_file_on_remote
         )
         if s.database_is_disabled:
             self.project.db.update()
@@ -844,7 +861,7 @@ class GenericJob(JobCore):
     #         self._logger.info("{}, status: {}, script: {}".format(self.job_info_str, self.status, file_name))
     #         with open(posixpath.join(self.project_hdf5.working_directory, 'out.txt'), mode='w') as f_out:
     #             with open(posixpath.join(self.project_hdf5.working_directory, 'error.txt'), mode='w') as f_err:
-    #                 self._process = subprocess.Popen(['python', '-m', 'pyiron.base.job.wrappercmd', '-p',
+    #                 self._process = subprocess.Popen(['python', '-m', 'pyiron.cli', 'wrapper', '-p',
     #                                                   self.working_directory, '-j', str(self.job_id)],
     #                                                  cwd=self.project_hdf5.working_directory, shell=shell, stdout=f_out,
     #                                                  stderr=f_err, universal_newlines=True)
@@ -889,7 +906,7 @@ class GenericJob(JobCore):
             print(
                 "You have selected to start the job manually. "
                 + "To run it, go into the working directory {} and ".format(abs_working)
-                + "call 'python -m pyiron.base.job.wrappercmd -p {}".format(abs_working)
+                + "call 'python -m pyiron.cli wrapper -p {}".format(abs_working)
                 + " -j {} ' ".format(self.job_id)
             )
 
@@ -906,7 +923,7 @@ class GenericJob(JobCore):
         if s.queue_adapter.remote_flag:
             filename = s.queue_adapter.convert_path_to_remote(path=self.project_hdf5.file_name)
             working_directory = s.queue_adapter.convert_path_to_remote(path=self.working_directory)
-            command = "python -m pyiron.base.job.wrappercmd -p " \
+            command = "python -m pyiron.cli wrapper -p " \
                       + working_directory \
                       + " -f " + filename + self.project_hdf5.h5_path \
                       + " --submit"
@@ -915,11 +932,11 @@ class GenericJob(JobCore):
                 transfer_back=False
             )
         elif s.database_is_disabled:
-            command = "python -m pyiron.base.job.wrappercmd -p " \
+            command = "python -m pyiron.cli wrapper -p " \
                       + self.working_directory \
                       + " -f " + self.project_hdf5.file_name + self.project_hdf5.h5_path
         else:
-            command = "python -m pyiron.base.job.wrappercmd -p " \
+            command = "python -m pyiron.cli wrapper -p " \
                       + self.working_directory \
                       + " -j " + str(self.job_id)
         try:
@@ -1008,7 +1025,6 @@ class GenericJob(JobCore):
             obj_type=[
                 "pyiron.base.master.parallel.ParallelMaster",
                 "pyiron.base.master.serial.SerialMasterBase",
-                "pyiron.atomistic.job.interactivewrapper.InteractiveWrapper",
             ],
         ):
             job.ref_job = self
@@ -1019,7 +1035,26 @@ class GenericJob(JobCore):
                 or self.server.run_mode.interactive_non_modal
             ):
                 job.server.run_mode.interactive = True
+        elif static_isinstance(
+            obj=job.__class__,
+            obj_type=[
+                "pyiron.atomistics.job.interactivewrapper.InteractiveWrapper",
+            ],
+        ):
+            job.ref_job = self
         return job
+
+    def create_pipeline(self, step_lst):
+        """
+        Create a job pipeline
+
+        Args:
+            step_lst (list): List of functions which create calculations
+
+        Returns:
+            FlexibleMaster:
+        """
+        return self.project.create_pipeline(job=self, step_lst=step_lst)
 
     def update_master(self):
         """
@@ -1151,6 +1186,18 @@ class GenericJob(JobCore):
         job_id = self.project.db.add_item_dict(self.db_entry())
         self._job_id = job_id
         self.refresh_job_status()
+        if self._check_if_input_should_be_written():
+            self.project_hdf5.create_working_directory()
+            self.write_input()
+            self._copy_restart_files()
+        self.status.created = True
+        self._calculate_predecessor()
+        print(
+            "The job "
+            + self.job_name
+            + " was saved and received the ID: "
+            + str(job_id)
+        )
         return job_id
 
     def convergence_check(self):
@@ -1186,14 +1233,13 @@ class GenericJob(JobCore):
         }
         return db_dict
 
-    def restart(self, snapshot=-1, job_name=None, job_type=None):
+    def restart(self, job_name=None, job_type=None):
         """
         Create an restart calculation from the current calculation - in the GenericJob this is the same as create_job().
         A restart is only possible after the current job has finished. If you want to run the same job again with
-        different input parameters use job.run(run_again=True) instead.
+        different input parameters use job.run(delete_existing_job=True) instead.
 
         Args:
-            snapshot (int): time step from which to restart the calculation - default=-1 - the last time step
             job_name (str): job name of the new calculation - default=<job_name>_restart
             job_type (str): job type of the new calculation - default is the same type as the exeisting calculation
 
@@ -1201,14 +1247,16 @@ class GenericJob(JobCore):
 
         """
         if not self.job_id:
-            self._create_job_structure(debug=False)
+            self.save()
         if job_name is None:
             job_name = "{}_restart".format(self.job_name)
         if job_type is None:
             job_type = self.__name__
         if job_type == self.__name__ and job_name not in self.project.list_nodes():
             new_ham = self.copy_to(
-                new_job_name=job_name, new_database_entry=False, input_only=True
+                new_job_name=job_name,
+                new_database_entry=False,
+                input_only=True
             )
         else:
             new_ham = self.create_job(job_type, job_name)
@@ -1308,7 +1356,7 @@ class GenericJob(JobCore):
         if self.check_if_job_exists():
             print("job exists already and therefore was not created!")
         else:
-            self._create_job_structure(debug=debug)
+            self.save()
             self.run()
 
     def _run_if_created(self):
@@ -1346,7 +1394,7 @@ class GenericJob(JobCore):
             self.server.run_mode.queue
             and not self.project.queue_check_job_is_waiting_or_running(self.job_id)
         ):
-            self.run(run_again=True)
+            self.run(delete_existing_job=True)
         else:
             print("Job " + str(self.job_id) + " is waiting in the que!")
 
@@ -1359,7 +1407,7 @@ class GenericJob(JobCore):
             self.server.run_mode.queue
             and not self.project.queue_check_job_is_waiting_or_running(self.job_id)
         ):
-            self.run(run_again=True)
+            self.run(delete_existing_job=True)
         elif self.server.run_mode.interactive:
             self.run_if_interactive()
         elif self.server.run_mode.interactive_non_modal:
@@ -1422,15 +1470,21 @@ class GenericJob(JobCore):
         self.status.refresh = True
         self.run()
 
-    def _run_if_finished(self, run_again=False):
+    def _run_if_finished(self, delete_existing_job=False, run_again=False):
         """
         Internal helper function the run if finished function is called when the job status is 'finished'. It loads
         the existing job.
 
         Args:
-            run_again (bool): Delete the existing job and run the simulation again.
+            delete_existing_job (bool): Delete the existing job and run the simulation again.
+            run_again (bool): Same as delete_existing_job (deprecated)
         """
         if run_again:
+            warnings.warn('run_again is deprecated as of vers. 0.3.0.'
+                          + 'It is not guaranteed to be in service in vers. 0.4.0.'
+                          + 'Use delete_existing_job instead',
+                          DeprecationWarning)
+        if delete_existing_job:
             parent_id = self.parent_id
             self.parent_id = None
             self.remove()
@@ -1439,6 +1493,8 @@ class GenericJob(JobCore):
             self.parent_id = parent_id
             self.run()
         else:
+            self.logger.warning("The job {} is being loaded instead of running. To re-run use the argument "
+                                "'delete_existing_job=True in create_job'".format(self.job_name))
             self.from_hdf()
 
     def _executable_activate(self, enforce=False):
@@ -1467,6 +1523,8 @@ class GenericJob(JobCore):
             self._hdf5["VERSION"] = self.executable.version
         else:
             self._hdf5["VERSION"] = self.__version__
+        if hasattr(self, "__hdf_version__"):
+            self._hdf5["HDF_VERSION"] = self.__hdf_version__
 
     def _type_from_hdf(self):
         """
@@ -1563,25 +1621,17 @@ class GenericJob(JobCore):
         Args:
             debug (bool): Debug Mode
         """
-        self._job_id = self.save()
-        print(
-            "The job "
-            + self.job_name
-            + " was saved and received the ID: "
-            + str(self._job_id)
-        )
-        if self._check_if_input_should_be_written():
-            self.project_hdf5.create_working_directory()
-            self.write_input()
-            self._copy_restart_files()
-        self.status.created = True
-        self._calculate_predecessor()
+        warnings.warn("Use job.save() instead of job._create_job_structure().", self.s.DeprecationWarning)
+        self.save()
 
     def _check_if_input_should_be_written(self):
-        return not (
-            self.server.run_mode.interactive
-            or self.server.run_mode.interactive_non_modal
-        )
+        if self._python_only_job:
+            return False
+        else:
+            return not (
+                self.server.run_mode.interactive
+                or self.server.run_mode.interactive_non_modal
+            )
 
     def _before_successor_calc(self, ham):
         """
@@ -1590,6 +1640,24 @@ class GenericJob(JobCore):
         Mainly used by the ListMaster job type.
         """
         pass
+
+
+class GenericError(object):
+    def __init__(self, job):
+        self._job = job
+
+    def print_message(self, string=''):
+        return self._print_error(file_name='error.msg', string=string)
+
+    def print_queue(self, string=''):
+        return self._print_error(file_name='error.out', string=string)
+
+    def _print_error(self, file_name, string='', print_yes=True):
+        if self._job[file_name] is None:
+            return False
+        elif print_yes:
+            print(string.join(self._job[file_name]))
+        return True
 
 
 def multiprocess_wrapper(job_id, working_dir, debug=False):

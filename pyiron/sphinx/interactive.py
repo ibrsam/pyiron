@@ -8,9 +8,8 @@ import scipy.constants
 import subprocess
 import warnings
 import time
-from pyiron.sphinx.base import SphinxBase
-from pyiron.atomistics.job.interactive import GenericInteractive
-from collections import OrderedDict as odict
+from pyiron.sphinx.base import SphinxBase, Group
+from pyiron.atomistics.job.interactive import GenericInteractive, GenericInteractiveOutput
 
 BOHR_TO_ANGSTROM = (
     scipy.constants.physical_constants["Bohr radius"][0] / scipy.constants.angstrom
@@ -20,7 +19,7 @@ HARTREE_OVER_BOHR_TO_EV_OVER_ANGSTROM = HARTREE_TO_EV / BOHR_TO_ANGSTROM
 
 __author__ = "Osamu Waseda, Jan Janssen"
 __copyright__ = (
-    "Copyright 2019, Max-Planck-Institut für Eisenforschung GmbH - "
+    "Copyright 2020, Max-Planck-Institut für Eisenforschung GmbH - "
     "Computational Materials Design (CM) Department"
 )
 __version__ = "1.0"
@@ -33,9 +32,11 @@ __date__ = "Sep 1, 2017"
 class SphinxInteractive(SphinxBase, GenericInteractive):
     def __init__(self, project, job_name):
         super(SphinxInteractive, self).__init__(project, job_name)
+        self.output = SphinxOutput(job=self)
         self._interactive_write_input_files = True
         self._interactive_library_read = None
         self._interactive_fetch_completed = True
+        self._coarse_run = False
 
     @property
     def structure(self):
@@ -73,7 +74,7 @@ class SphinxInteractive(SphinxBase, GenericInteractive):
 
     @property
     def coarse_run(self):
-        if "CoarseRun" in list(self.input.get_pandas()["Parameter"]):
+        if "CoarseRun" in self.input:
             self._coarse_run = self.input["CoarseRun"]
         return self._coarse_run
 
@@ -202,6 +203,28 @@ class SphinxInteractive(SphinxBase, GenericInteractive):
             self._interactive_pipe_write("run restart")
             self.interactive_fetch()
 
+    def _output_interactive_to_generic(self):
+        with self.project_hdf5.open("output") as h5:
+            if "interactive" in h5.list_groups():
+                for key in ["positions", "cells", "indices", "cells", "forces"]:
+                    h5["generic/" + key] = h5["interactive/" + key]
+                with self.project_hdf5.open("input") as hdf5_input:
+                    with hdf5_input.open("generic") as hdf5_generic:
+                        if "dft" not in hdf5_generic.list_groups():
+                            hdf5_generic.create_group("dft")
+                        with hdf5_generic.open("dft") as hdf5_dft:
+                            if (
+                                "atom_spin_constraints"
+                                in h5["interactive"].list_nodes()
+                            ):
+                                hdf5_dft["atom_spin_constraints"] = h5[
+                                    "interactive/atom_spin_constraints"
+                                ]
+
+    def collect_output(self, force_update=False):
+        super(SphinxInteractive, self).collect_output(force_update=force_update)
+        self._output_interactive_to_generic()
+
     def interactive_close(self):
         if self.interactive_is_activated():
             self._interactive_pipe_write("end")
@@ -210,22 +233,7 @@ class SphinxInteractive(SphinxBase, GenericInteractive):
             self.status.collect = True
             if self["energy.dat"] is not None:
                 self.run()
-            with self.project_hdf5.open("output") as h5:
-                if "interactive" in h5.list_groups():
-                    for key in ["positions", "cells"]:
-                        h5["generic/" + key] = h5["interactive/" + key]
-                    with self.project_hdf5.open("input") as hdf5_input:
-                        with hdf5_input.open("generic") as hdf5_generic:
-                            if "dft" not in hdf5_generic.list_groups():
-                                hdf5_generic.create_group("dft")
-                            with hdf5_generic.open("dft") as hdf5_dft:
-                                if (
-                                    "atom_spin_constraints"
-                                    in h5["interactive"].list_nodes()
-                                ):
-                                    hdf5_dft["atom_spin_constraints"] = h5[
-                                        "interactive/atom_spin_constraints"
-                                    ]
+            self._output_interactive_to_generic()
             super(SphinxInteractive, self).interactive_close()
 
     def calc_minimize(
@@ -237,6 +245,8 @@ class SphinxInteractive(SphinxBase, GenericInteractive):
         algorithm=None,
         retain_charge_density=False,
         retain_electrostatic_potential=False,
+        ionic_energy_tolerance=0.0,
+        ionic_force_tolerance=1.0e-2,
         ionic_energy=None,
         ionic_forces=None,
         volume_only=False,
@@ -257,15 +267,15 @@ class SphinxInteractive(SphinxBase, GenericInteractive):
                 algorithm=algorithm,
                 retain_charge_density=retain_charge_density,
                 retain_electrostatic_potential=retain_electrostatic_potential,
-                ionic_energy=ionic_energy,
-                ionic_forces=ionic_forces,
+                ionic_energy_tolerance=ionic_energy_tolerance,
+                ionic_force_tolerance=ionic_force_tolerance,
                 volume_only=volume_only,
             )
 
     def run_if_interactive(self):
         super(SphinxInteractive, self).run_if_interactive()
         self._logger.debug("interactive run - start ...")
-        if self._coarse_run:
+        if self.coarse_run:
             self._interactive_pipe_write("run coarseelectronicminimization")
         else:
             self._interactive_pipe_write("run electronicminimization")
@@ -277,7 +287,7 @@ class SphinxInteractive(SphinxBase, GenericInteractive):
             self.interactive_fetch()
         super(SphinxInteractive, self).run_if_interactive()
         self._logger.debug("interactive run - start ...")
-        if self._coarse_run:
+        if self.coarse_run:
             self._interactive_pipe_write("run coarseelectronicminimization")
         else:
             self._interactive_pipe_write("run electronicminimization")
@@ -314,7 +324,7 @@ class SphinxInteractive(SphinxBase, GenericInteractive):
 
     def calc_static(
         self,
-        electronic_steps=400,
+        electronic_steps=100,
         blockSize=8,
         dSpinMoment=1e-8,
         algorithm=None,
@@ -337,52 +347,79 @@ class SphinxInteractive(SphinxBase, GenericInteractive):
             retain_electrostatic_potential=retain_electrostatic_potential,
         )
 
-    @property
-    def _control_str(self):
-        control_str = odict()
+    def load_main_group(self):
+        main_group = Group()
         if (
             self.server.run_mode.interactive
             or self.server.run_mode.interactive_non_modal
         ):
-            commands = [
-                odict(
-                    [
-                        ("id", '"restart"'),
-                        (
-                            "scfDiag",
-                            self._input_control_scf_string(
-                                maxSteps=10, keepRhoFixed=True, dEnergy=1.0e-4
-                            ),
+            commands = Group([
+                {
+                    "id": '"restart"',
+                    "scfDiag":
+                        self.get_scf_group(
+                            maxSteps=10, keepRhoFixed=True, dEnergy=1.0e-4
+                        )
+                }, {
+                    "id": '"coarseelectronicminimization"',
+                    "scfDiag":
+                        self.get_scf_group(
+                            dEnergy=1000*self.input["Ediff"] / HARTREE_TO_EV
                         ),
-                    ]
-                )
-            ]
-            commands.append(
-                odict(
-                    [
-                        ("id", '"coarseelectronicminimization"'),
-                        (
-                            "scfDiag",
-                            self._input_control_scf_string(
-                                dEnergy="1000*Ediff/" + str(HARTREE_TO_EV)
-                            ),
-                        ),
-                    ]
-                )
-            )
-            commands.append(
-                odict(
-                    [
-                        ("id", '"electronicminimization"'),
-                        ("scfDiag", self._input_control_scf_string()),
-                    ]
-                )
-            )
-            control_str["extControl"] = odict()
-            control_str["extControl"]["bornOppenheimer"] = commands
-            return control_str
+                }, {
+                    "id": '"electronicminimization"',
+                    "scfDiag": self.get_scf_group(),
+                }
+            ])
+            self.input.sphinx.main.extControl = Group()
+            self.input.sphinx.main.extControl.set_group('bornOppenheimer')
+            self.input.sphinx.main.extControl.bornOppenheimer = commands
         else:
-            return super(SphinxInteractive, self)._control_str
+            super(SphinxInteractive, self).load_main_group()
+
+
+class SphinxOutput(GenericInteractiveOutput):
+    def __init__(self, job):
+        super(SphinxOutput, self).__init__(job)
+
+    def check_band_occupancy(self, plot=True):
+        """
+            Check whether there are still empty bands available.
+
+            args:
+                plot (bool): plots occupancy of the last step
+
+            returns:
+                True if there are still empty bands
+        """
+        import matplotlib.pylab as plt
+        elec_dict = self._job['output/generic/dft']['n_valence']
+        if elec_dict is None:
+            raise AssertionError('Number of electrons not parsed')
+        n_elec = np.sum([elec_dict[k]
+                         for k in self._job.structure.get_chemical_symbols()])
+        n_elec = int(np.ceil(n_elec/2))
+        bands = self._job['output/generic/dft/bands_occ'][-1]
+        bands = bands.reshape(-1, bands.shape[-1])
+        max_occ = np.sum(bands>0, axis=-1).max()
+        n_bands = bands.shape[-1]
+        if plot:
+            xticks = np.arange(1, n_bands+1)
+            plt.xlabel('Electron number')
+            plt.ylabel('Occupancy')
+            if n_bands<20:
+                plt.xticks(xticks)
+            plt.axvline(n_elec, label='#electrons: {}'.format(n_elec))
+            plt.axvline(max_occ, color='red',
+                label='Max occupancy: {}'.format(max_occ))
+            plt.axvline(n_bands, color='green',
+                label='Number of bands: {}'.format(n_bands))
+            plt.plot(xticks, bands.T, 'x', color='black')
+            plt.legend()
+        if max_occ < n_bands:
+            return True
+        else:
+            return False
 
 
 class SphinxInt2(SphinxInteractive):

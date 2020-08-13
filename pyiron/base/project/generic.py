@@ -41,6 +41,7 @@ from pyiron.base.server.queuestatus import (
     queue_enable_reservation,
     queue_check_job_is_waiting_or_running,
 )
+from pyiron.base.job.external import Notebook
 
 """
 The project object is the central import point of pyiron - all other objects can be created from this one
@@ -48,7 +49,7 @@ The project object is the central import point of pyiron - all other objects can
 
 __author__ = "Joerg Neugebauer, Jan Janssen"
 __copyright__ = (
-    "Copyright 2019, Max-Planck-Institut für Eisenforschung GmbH - "
+    "Copyright 2020, Max-Planck-Institut für Eisenforschung GmbH - "
     "Computational Materials Design (CM) Department"
 )
 __version__ = "1.0"
@@ -69,6 +70,9 @@ class Project(ProjectPath):
                                      current working directory) path
         user (str): current pyiron user
         sql_query (str): SQL query to only select a subset of the existing jobs within the current project
+        default_working_directory (bool): Access default working directory, for ScriptJobs this equals the project
+                                    directory of the ScriptJob for regular projects it falls back to the current
+                                    directory.
 
     Attributes:
 
@@ -120,7 +124,14 @@ class Project(ProjectPath):
 
     """
 
-    def __init__(self, path="", user=None, sql_query=None):
+    def __init__(self, path="", user=None, sql_query=None, default_working_directory=False):
+        if default_working_directory and path=="":
+            inputdict = Notebook.get_custom_dict()
+            if inputdict is not None and "project_dir" in inputdict.keys():
+                path = inputdict["project_dir"]
+            else:
+                path = "."
+
         super(Project, self).__init__(path=path)
 
         self.user = user
@@ -201,7 +212,7 @@ class Project(ProjectPath):
                     sub_project.copy_to(destination_sub_project)
             for job_id in self.get_job_ids(recursive=False):
                 ham = self.load(job_id)
-                ham.copy_to(destination)
+                ham.copy_to(project=destination)
             for file in self.list_files():
                 if ".h5" not in file:
                     shutil.copy(os.path.join(self.path, file), destination.path)
@@ -226,7 +237,12 @@ class Project(ProjectPath):
             return None
 
         print("job_old: ", job_old.status)
-        job_new = job_old.copy_to(self, new_job_name=new_job_name)
+        job_new = job_old.copy_to(
+            project=self,
+            new_job_name=new_job_name,
+            input_only=False,
+            new_database_entry=True
+        )
         s.logger.debug(
             "create_job:: {} {} from id {}".format(
                 self.path, new_job_name, job_old.job_id
@@ -247,7 +263,7 @@ class Project(ProjectPath):
         new = self.copy()
         return new.open(group, history=False)
 
-    def create_job(self, job_type, job_name):
+    def create_job(self, job_type, job_name, delete_existing_job=False):
         """
         Create one of the following jobs:
         - 'ExampleJob': example job just generating random number
@@ -269,6 +285,7 @@ class Project(ProjectPath):
             project=ProjectHDFio(project=self.copy(), file_name=job_name),
             job_name=job_name,
             job_class_dict=self.job_type.job_class_dict,
+            delete_existing_job=delete_existing_job,
         )
         if self.user is not None:
             job.user = self.user
@@ -626,6 +643,22 @@ class Project(ProjectPath):
         )
         return df["status"].value_counts()
 
+    @staticmethod
+    def get_external_input():
+        """
+        Get external input either from the HDF5 file of the ScriptJob object which executes the Jupyter notebook
+        or from an input.json file located in the same directory as the Jupyter notebook. 
+        
+        Returns:
+            dict: Dictionary with external input
+        """
+        inputdict = Notebook.get_custom_dict()
+        if inputdict is None:
+            raise ValueError("No input found, either there is an issue with your ScriptJob, " + 
+                             "or your input.json file is not located in the same directory " +
+                             "as your Jupyter Notebook.")
+        return inputdict
+
     def keys(self):
         """
         List of file-, folder- and objectnames
@@ -979,6 +1012,8 @@ class Project(ProjectPath):
         Args:
             recursive (bool): [True/False] delete all jobs in all subprojects - default=False
         """
+        if not isinstance(recursive, bool):
+            raise ValueError('recursive must be a boolean')
         if not self.view_mode:
             for job_id in self.get_job_ids(recursive=recursive):
                 if job_id not in self.get_job_ids(recursive=recursive):

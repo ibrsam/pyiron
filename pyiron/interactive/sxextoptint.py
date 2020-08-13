@@ -20,7 +20,7 @@ from pyiron.sphinx.base import InputWriter
 
 __author__ = "Jan Janssen, Osamu Waseda"
 __copyright__ = (
-    "Copyright 2019, Max-Planck-Institut für Eisenforschung GmbH - "
+    "Copyright 2020, Max-Planck-Institut für Eisenforschung GmbH - "
     "Computational Materials Design (CM) Department"
 )
 __version__ = "1.0"
@@ -40,12 +40,28 @@ class SxExtOpt(InteractiveInterface):
         working_directory=None,
         maxDist=5,
         ionic_steps=1000,
-        ionic_energy=1.0e-3,
-        ionic_forces=1.0e-2,
+        ionic_energy=None,
+        ionic_forces=None,
+        ionic_energy_tolerance=1.0e-3,
+        ionic_force_tolerance=1.0e-2,
         max_step_length=1.0e-1,
         soft_mode_damping=1,
         executable=None,
+        ssa=False,
     ):
+        if ionic_forces is not None:
+            warnings.warn(('ionic_forces is deprecated as of vers. 0.3.0.'
+                           +'It is not guaranteed to be in service in vers. 0.4.0.'
+                           +'Use ionic_force_tolerance instead'),
+                           DeprecationWarning)
+            ionic_force_tolerance = ionic_forces
+        if ionic_energy is not None:
+            warnings.warn(('ionic_energy is deprecated as of vers. 0.3.0.'
+                           +'It is not guaranteed to be in service in vers. 0.4.0.'
+                           +'Use ionic_energy_tolerance instead'),
+                           DeprecationWarning)
+            ionic_energy_tolerance = ionic_energy
+        super().__init__()
         self.__name__ = "SxExtOpt"
         if working_directory is None:
             warnings.warn("WARNING: working_directory not set; current folder is used")
@@ -65,19 +81,23 @@ class SxExtOpt(InteractiveInterface):
             executable=executable,
             maxDist=maxDist,
             ionic_steps=ionic_steps,
-            ionic_energy=ionic_energy,
-            ionic_forces=ionic_forces,
+            ionic_energy_tolerance=ionic_energy_tolerance,
+            ionic_force_tolerance=ionic_force_tolerance,
             max_step_length=max_step_length,
             soft_mode_damping=soft_mode_damping,
             selective_dynamics="selective_dynamics" in structure._tag_list.keys(),
+            ssa=ssa,
         )
         self._cell = structure.cell
-        magmom = structure.get_initial_magnetic_moments()
-        magmom[magmom!=None] = np.round(magmom[magmom!=None], decimals=1)
-        magmom = np.char.mod('%s', magmom)
-        self._elements = np.char.add(structure.get_parent_symbols(), magmom)
-        self._elements = np.char.replace(self._elements, '-', 'm')
-        self._elements = np.char.replace(self._elements, '.', 'p')
+        if ssa:
+            self._elements = structure.get_parent_symbols()
+        else:
+            magmom = structure.get_initial_magnetic_moments()
+            magmom[magmom!=None] = np.round(magmom[magmom!=None], decimals=1)
+            magmom = np.char.mod('%s', magmom)
+            self._elements = np.char.add(structure.get_parent_symbols(), magmom)
+            self._elements = np.char.replace(self._elements, '-', 'm')
+            self._elements = np.char.replace(self._elements, '.', 'p')
         self._positions = structure.positions
         self._converged = False
 
@@ -87,15 +107,18 @@ class SxExtOpt(InteractiveInterface):
         executable,
         maxDist=5,
         ionic_steps=1000,
-        ionic_energy=1.0e-3,
-        ionic_forces=1.0e-2,
+        ionic_energy_tolerance=1.0e-3,
+        ionic_force_tolerance=1.0e-2,
         max_step_length=1.0e-1,
         soft_mode_damping=1,
         selective_dynamics=False,
+        ssa=False,
     ):
         if selective_dynamics:
             input_writer_obj = InputWriter()
             input_writer_obj.structure = structure
+            if ssa:
+                input_writer_obj.structure.set_initial_magnetic_moments(len(structure)*[None])
             input_writer_obj.write_structure(
                 file_name="structure.sx",
                 cwd=self.working_directory,
@@ -107,8 +130,8 @@ class SxExtOpt(InteractiveInterface):
             working_directory=self.working_directory,
             maxDist=maxDist,
             ionic_steps=ionic_steps,
-            ionic_energy=ionic_energy,
-            ionic_forces=ionic_forces,
+            ionic_energy_tolerance=ionic_energy_tolerance,
+            ionic_force_tolerance=ionic_force_tolerance,
             max_step_length=max_step_length,
             soft_mode_damping=soft_mode_damping,
             selective_dynamics=selective_dynamics,
@@ -141,8 +164,8 @@ class SxExtOpt(InteractiveInterface):
         working_directory,
         maxDist=5,
         ionic_steps=1000,
-        ionic_energy=1.0e-3,
-        ionic_forces=1.0e-2,
+        ionic_energy_tolerance=1.0e-3,
+        ionic_force_tolerance=1.0e-2,
         max_step_length=1.0e-1,
         soft_mode_damping=1,
         selective_dynamics=False,
@@ -153,8 +176,8 @@ class SxExtOpt(InteractiveInterface):
                 % (
                     maxDist,
                     ionic_steps,
-                    ionic_energy,
-                    ionic_forces,
+                    ionic_energy_tolerance,
+                    ionic_force_tolerance,
                     max_step_length,
                     soft_mode_damping,
                 )
@@ -185,6 +208,14 @@ class SxExtOpt(InteractiveInterface):
         if self.interactive_is_activated():
             self._interactive_library.close()
             self._interactive_library_read.close()
+            self._delete_named_pipes(working_directory=self.working_directory)
+
+    @staticmethod 
+    def _delete_named_pipes(working_directory):
+        for file in ["control", "response"]:
+            file_path = posixpath.join(working_directory, file)
+            if os.path.exists(file_path):
+                os.remove(file_path)
 
     def interactive_is_activated(self):
         if self._interactive_library is None:
@@ -264,6 +295,8 @@ class SxExtOpt(InteractiveInterface):
         self.end()
         if self.interactive_is_activated():
             self.interactive_close()
+        else:
+            self._delete_named_pipes(working_directory=self.working_directory)
 
 
 class SxExtOptInteractive(InteractiveWrapper):
@@ -302,11 +335,12 @@ class SxExtOptInteractive(InteractiveWrapper):
             working_directory=self.working_directory,
             maxDist=int(self.input["maxDist"]),
             ionic_steps=int(self.input["ionic_steps"]),
-            ionic_energy=float(self.input["ionic_energy"]),
-            ionic_forces=float(self.input["ionic_forces"]),
+            ionic_energy_tolerance=float(self.input["ionic_energy_tolerance"]),
+            ionic_force_tolerance=float(self.input["ionic_force_tolerance"]),
             max_step_length=float(self.input["max_step_length"]),
             soft_mode_damping=float(self.input["soft_mode_damping"]),
             executable=self.executable.executable_path,
+            ssa=self.input['ssa'],
         )
         try:
             self._coarse_run = self.ref_job.coarse_run
@@ -329,22 +363,22 @@ class SxExtOptInteractive(InteractiveWrapper):
                 if (
                     self._coarse_run
                     and np.max(np.linalg.norm(self.get_forces(), axis=-1), axis=-1)
-                    < self.input["ionic_forces"]
+                    < self.input["ionic_force_tolerance"]
                 ):
                     self._coarse_run = False
                     self.ref_job.coarse_run = False
                     self.ref_job.run()
                 self._logger.debug("SxExtOpt: step finished!")
             else:
-                self.ref_job.run(run_again=True)
+                self.ref_job.run(delete_existing_job=True)
                 if (
                     self._coarse_run
                     and np.max(np.linalg.norm(self.get_forces(), axis=-1), axis=-1)
-                    < self.input["ionic_forces"]
+                    < self.input["ionic_force_tolerance"]
                 ):
                     self._coarse_run = False
                     self.ref_job.coarse_run = False
-                    self.ref_job.run(run_again=True)
+                    self.ref_job.run(delete_existing_job=True)
             self._interactive_interface.set_forces(forces=self.get_forces())
             new_positions = self._interactive_interface.get_positions()
             self._interactive_number_of_steps += 1
@@ -398,10 +432,11 @@ class Input(GenericParameters):
         """
         file_content = (
             "ionic_steps = 1000 // maximum number of ionic steps\n"
-            "ionic_energy = 1.0e-3\n"
-            "ionic_forces = 1.0e-2\n"
+            "ionic_energy_tolerance = 1.0e-3\n"
+            "ionic_force_tolerance = 1.0e-2\n"
             "maxDist = 5 // maximum possible distance for considering neighbors\n"
             "max_step_length = 1.0e-1 // maximum displacement at each step\n"
+            "ssa = False // ignore different magnetic moment values when internal symmetries are considered\n"
             "soft_mode_damping = 1.0 // Tikhonov damper\n"
         )
         self.load_string(file_content)

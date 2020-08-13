@@ -18,7 +18,7 @@ from pyiron.atomistics.job.interactive import GenericInteractive
 
 __author__ = "Osamu Waseda, Jan Janssen"
 __copyright__ = (
-    "Copyright 2019, Max-Planck-Institut für Eisenforschung GmbH - "
+    "Copyright 2020, Max-Planck-Institut für Eisenforschung GmbH - "
     "Computational Materials Design (CM) Department"
 )
 __version__ = "1.0"
@@ -56,8 +56,26 @@ class VaspInteractive(VaspBase, GenericInteractive):
             "interactive_enforce_structure_reset() is not implemented!"
         )
 
-    def get_structure(self, iteration_step=-1):
-        return GenericInteractive.get_structure(self, iteration_step=iteration_step)
+    def get_structure(self, iteration_step=-1, wrap_atoms=True):
+        """
+        Gets the structure from a given iteration step of the simulation (MD/ionic relaxation). For static calculations
+        there is only one ionic iteration step
+        Args:
+            iteration_step (int): Step for which the structure is requested
+            wrap_atoms (bool): True if the atoms are to be wrapped back into the unit cell
+
+        Returns:
+            pyiron.atomistics.structure.atoms.Atoms: The required structure
+        """
+        if (
+            self.server.run_mode.interactive
+            or self.server.run_mode.interactive_non_modal
+        ):
+            structure = GenericInteractive.get_structure(self, iteration_step=iteration_step, wrap_atoms=wrap_atoms)
+        else:
+            structure = VaspBase.get_structure(self, iteration_step=iteration_step, wrap_atoms=wrap_atoms)
+
+        return structure
 
     def interactive_close(self):
         if self.interactive_is_activated():
@@ -145,6 +163,8 @@ class VaspInteractive(VaspBase, GenericInteractive):
         retain_electrostatic_potential=False,
         ionic_energy=None,
         ionic_forces=None,
+        ionic_energy_tolerance=None,
+        ionic_force_tolerance=None,
         volume_only=False,
     ):
         """
@@ -159,8 +179,10 @@ class VaspInteractive(VaspBase, GenericInteractive):
             algorithm (str): Type of VASP algorithm to be used "Fast"/"Accurate"
             retain_charge_density (bool): True if the charge density should be written
             retain_electrostatic_potential (boolean): True if the electrostatic potential should be written
-            ionic_energy (float): Ionic energy convergence criteria (eV)
-            ionic_forces (float): Ionic forces convergence criteria (overwrites ionic energy) (ev/A)
+            ionic_energy_tolerance (float): Ionic energy convergence criteria (eV)
+            ionic_force_tolerance (float): Ionic forces convergence criteria (overwrites ionic energy) (ev/A)
+            ionic_energy (float): Same as ionic_energy_tolerance (deprecated)
+            ionic_forces (float): Same as ionic_force_tolerance (deprecated)
             volume_only (bool): Option to relax only the volume (keeping the relative coordinates fixed
         """
         if (

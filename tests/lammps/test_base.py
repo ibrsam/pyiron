@@ -9,7 +9,7 @@ from pyiron.base.project.generic import Project
 from pyiron.atomistics.structure.atoms import Atoms
 from pyiron.base.generic.hdfio import ProjectHDFio
 from pyiron.lammps.lammps import Lammps
-from pyiron.lammps.base import LammpsStructure
+from pyiron.lammps.base import LammpsStructure, UnfoldingPrism
 import ase.units as units
 
 
@@ -53,6 +53,10 @@ class TestLammps(unittest.TestCase):
         cls.job_average = Lammps(
             project=ProjectHDFio(project=cls.project, file_name="lammps"),
             job_name="average",
+        )
+        cls.job_fail = Lammps(
+            project=ProjectHDFio(project=cls.project, file_name="lammps"),
+            job_name="fail",
         )
 
     @classmethod
@@ -196,8 +200,7 @@ class TestLammps(unittest.TestCase):
         r_H2 = [-dx, dx, 0]
         unit_cell = (a / n) * np.eye(3)
         water = Atoms(
-            elements=["H", "H", "O"], positions=[r_H1, r_H2, r_O], cell=unit_cell
-        )
+            elements=["H", "H", "O"], positions=[r_H1, r_H2, r_O], cell=unit_cell, pbc=True)
         water.set_repeat([n, n, n])
         self.job_water.structure = water
         with self.assertWarns(UserWarning):
@@ -233,7 +236,6 @@ class TestLammps(unittest.TestCase):
             "energy_tot",
             "energy_pot",
             "steps",
-            "time",
             "positions",
             "forces",
             "cells",
@@ -271,8 +273,7 @@ class TestLammps(unittest.TestCase):
         unit_cell = (a / n) * np.eye(3)
         unit_cell[0][1] += 0.01
         water = Atoms(
-            elements=["H", "H", "O"], positions=[r_H1, r_H2, r_O], cell=unit_cell
-        )
+            elements=["H", "H", "O"], positions=[r_H1, r_H2, r_O], cell=unit_cell, pbc=True)
         water.set_repeat([n, n, n])
         self.job_water_dump.structure = water
         with self.assertWarns(UserWarning):
@@ -285,6 +286,7 @@ class TestLammps(unittest.TestCase):
             n_print=200,
             pressure=0,
         )
+        self.assertFalse('nan' in self.job_water_dump.input.control['fix___ensemble'])
         file_directory = os.path.join(
             self.execution_path, "..", "static", "lammps_test_files"
         )
@@ -516,11 +518,12 @@ class TestLammps(unittest.TestCase):
 
     def test_calc_minimize_input(self):
         # Ensure that defaults match control defaults
-        atoms = Atoms("Fe", positions=np.zeros((8, 3)), cell=np.eye(3))
+        atoms = Atoms("Fe8", positions=np.zeros((8, 3)), cell=np.eye(3))
         self.minimize_control_job.structure = atoms
         self.minimize_control_job.input.control.calc_minimize()
 
         self.minimize_job.sturcture = atoms
+        self.minimize_job._prism = UnfoldingPrism(atoms.cell)
         self.minimize_job.calc_minimize()
         for k in self.job.input.control.keys():
             self.assertEqual(self.minimize_job.input.control[k], self.minimize_control_job.input.control[k])
@@ -556,6 +559,27 @@ class TestLammps(unittest.TestCase):
         )
         self.job_average.collect_dump_file(cwd=file_directory, file_name="dump_average.out")
         self.job_average.collect_output_log(cwd=file_directory, file_name="log_average.lammps")
+
+    def test_validate(self):
+        with self.assertRaises(ValueError):
+            self.job_fail.validate_ready_to_run()
+        a_0 = 2.855312531
+        atoms = Atoms("Fe2", positions=[3 * [0], 3 * [0.5 * a_0]], cell=a_0 * np.eye(3), pbc=False)
+        self.job_fail.structure = atoms
+        with self.assertRaises(ValueError):
+            self.job_fail.validate_ready_to_run()
+        self.job_fail.potential = self.job_fail.list_potentials()[-1]
+        self.job_fail.validate_ready_to_run()
+        self.job_fail.structure.positions[0, 0] -= 2.855
+        with self.assertRaises(ValueError):
+            self.job_fail.validate_ready_to_run()
+        self.job_fail.structure.pbc = True
+        self.job_fail.validate_ready_to_run()
+        self.job_fail.structure.pbc = [True, True, False]
+        self.job_fail.validate_ready_to_run()
+        self.job_fail.structure.pbc = [False, True, True]
+        with self.assertRaises(ValueError):
+            self.job_fail.validate_ready_to_run()
 
 
 if __name__ == "__main__":

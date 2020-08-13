@@ -13,7 +13,7 @@ Set of functions to interact with the queuing system directly from within pyiron
 
 __author__ = "Jan Janssen"
 __copyright__ = (
-    "Copyright 2019, Max-Planck-Institut für Eisenforschung GmbH - "
+    "Copyright 2020, Max-Planck-Institut für Eisenforschung GmbH - "
     "Computational Materials Design (CM) Department"
 )
 __version__ = "1.0"
@@ -44,9 +44,6 @@ def queue_table(job_ids=[], project_only=True, full_table=False):
         if full_table:
             pandas.set_option('display.max_rows', None)
             pandas.set_option('display.max_columns', None)
-        else:
-            pandas.reset_option('display.max_rows')
-            pandas.reset_option('display.max_columns')
         df = s.queue_adapter.get_status_of_my_jobs()
         if not project_only:
             return df[

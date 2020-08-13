@@ -370,7 +370,7 @@ class FHIAimsControlInput(GenericParameters):
         """
         Loading the default settings for the input file.
         """
-        # relativistic       atomic_zora scalar
+
         input_str = """
 xc                 pbe
 charge             0.
@@ -383,7 +383,7 @@ sc_iter_limit      500
 sc_accuracy_rho  1E-5
 sc_accuracy_eev  1E-3
 sc_accuracy_etot 1E-7
-
+relativistic       atomic_zora scalar
 compute_forces .true.
 clean_forces sayvetz
 sc_accuracy_forces 1E-4

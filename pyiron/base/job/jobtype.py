@@ -54,7 +54,9 @@ JOB_CLASS_DICT = {
     "SxPhonons": "pyiron.thermodynamics.sxphonons",
     "SxHarmPotTst": "pyiron.thermodynamics.sxphonons",
     "Gaussian": "pyiron.gaussian.gaussian",
+
     "FHIAims": "pyiron.fhiaims.fhi",
+    "ElasticMatrix": "pyiron.atomistics.master.elasticmatrix",
 }
 
 

@@ -128,7 +128,7 @@ class PhonopyJob(AtomisticParallelMaster):
             "Frequency unit conversion factor (default for VASP)",
         )
         self.input["displacement"] = (0.01, "atoms displacement, Ang")
-        self.input["dos_mesh"] = (20, "mesh size for DOS calculation")
+        self.input["dos_mesh"] = (75, "mesh size for DOS calculation")
 
         self.phonopy = None
         self._job_generator = PhonopyJobGenerator(self)

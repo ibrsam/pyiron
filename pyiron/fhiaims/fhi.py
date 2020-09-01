@@ -704,6 +704,7 @@ def collect_output(output_file):
     output_dict = {
         'cells': lattice_vectors_traj,
         'energy_pot': efs_stream_parser.free_energies_list,
+        'energy_tot': efs_stream_parser.free_energies_list,
         'forces': efs_stream_parser.forces_lst,
         'positions': positions_traj,
         # 'structure': structure_dict,

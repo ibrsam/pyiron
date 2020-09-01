@@ -3,12 +3,11 @@
 # Distributed under the terms of "New BSD License", see the LICENSE file.
 
 import os
-import numpy as np
 import warnings
 
-from pyiron.base.generic.parameters import GenericParameters
+import numpy as np
 from pyiron.atomistics.structure.atoms import Atoms
-
+from pyiron.base.generic.parameters import GenericParameters
 from pyiron.base.settings.generic import Settings
 from pyiron.dft.job.generic import GenericDFTJob, get_k_mesh_by_density
 
@@ -586,7 +585,7 @@ class UpdateGeometryStreamParser:
 
         line = line.strip(" \t\n")
 
-        if line.startswith("Updated atomic structure:"): # or line.startswith("Final atomic structure:"):
+        if line.startswith("Updated atomic structure:"):  # or line.startswith("Final atomic structure:"):
             self._atomic_structure_block_flag = True
 
         if line.startswith("-------------") and self._atomic_structure_block_flag:
@@ -691,14 +690,15 @@ def collect_output(output_file):
     if len(efs_stream_parser.free_energies_list) == 0 or len(efs_stream_parser.forces_lst) == 0:
         raise ValueError("No free electronic energies found. Calculation could be broken")
 
-    if len(init_geom_stream_parser.lattice_vectors_lst)>0:
-        lattice_vectors_traj = [init_geom_stream_parser.lattice_vectors_lst] + upd_geom_stream_parser.lattice_vectors_traj
+    if len(init_geom_stream_parser.lattice_vectors_lst) > 0:
+        lattice_vectors_traj = [
+                                   init_geom_stream_parser.lattice_vectors_lst] + upd_geom_stream_parser.lattice_vectors_traj
     else:
         lattice_vectors_traj = upd_geom_stream_parser.lattice_vectors_traj
 
     positions_traj = [init_geom_stream_parser.positions_lst] + upd_geom_stream_parser.positions_traj
 
-    if  len(positions_traj)==0:
+    if len(positions_traj) == 0:
         raise ValueError("No cells or positions info found. Calculation could be broken")
 
     output_dict = {
@@ -721,6 +721,10 @@ def collect_output(output_file):
     if len(efs_stream_parser.stresses_lst) > 0:
         output_dict["stresses"] = efs_stream_parser.stresses_lst
         stresses = output_dict["stresses"]
-        output_dict["pressures"] = np.array([-np.trace(stress)/3.0 for stress in stresses])
+        output_dict["pressures"] = np.array([-np.trace(stress) / 3.0 for stress in stresses])
+
+    if len(output_dict["cells"]) > 0:
+        cells = output_dict["cells"]
+        output_dict["volume"] = np.array([np.linalg.det(cell) for cell in cells])
 
     return output_dict

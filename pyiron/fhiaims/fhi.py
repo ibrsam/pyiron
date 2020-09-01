@@ -720,5 +720,7 @@ def collect_output(output_file):
 
     if len(efs_stream_parser.stresses_lst) > 0:
         output_dict["stresses"] = efs_stream_parser.stresses_lst
+        stresses = output_dict["stresses"]
+        output_dict["pressures"] = [-np.trace(stress)/3.0 for stress in stresses]
 
     return output_dict

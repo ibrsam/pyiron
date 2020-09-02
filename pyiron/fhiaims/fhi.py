@@ -3,6 +3,7 @@
 # Distributed under the terms of "New BSD License", see the LICENSE file.
 
 import os
+import re
 import warnings
 
 import numpy as np
@@ -18,9 +19,21 @@ __maintainer__ = ""
 __email__ = ""
 __status__ = "trial"
 __date__ = "Aug 11, 2020"
+
+FHI_OUT_KEYWORD_AIMS_UUID_TAG = "aims_uuid"
+EXPORT_AIMS_UUID = FHI_OUT_KEYWORD_AIMS_UUID_TAG
+EXPORT_FHI_AIMS_VERSION = "fhi-aims-version"
+EXPORT_FHI_AIMS_PARAMETERS = "fhi-aims-parameters"
+EXPORT_TOTAL_TIME = "total_time"
+
 DEFAULT_IONIC_STEPS = 1000
 
 s = Settings()
+
+
+def job_input_to_dict(inp):
+    dct = inp.get_pandas()[["Parameter", "Value"]].set_index("Parameter")["Value"].to_dict()
+    return {k: v for k, v in dct.items() if k != ""}
 
 
 class FHIAims(GenericDFTJob):
@@ -292,12 +305,14 @@ class FHIAims(GenericDFTJob):
         self.input.write(structure=self.structure, working_directory=self.working_directory)
 
     def collect_output(self):
-        output_dict = collect_output(output_file=os.path.join(self.working_directory, 'FHI.out'))
+        output_dict, meta_info_dict = collect_output(working_directory=self.working_directory,
+                                                     FHI_output_file='FHI.out')
 
         with self.project_hdf5.open("output") as hdf5_output:
             with hdf5_output.open("generic") as hdf5_generic:
                 for k, v in output_dict.items():
                     hdf5_generic[k] = v
+            hdf5_output["meta_info"] = meta_info_dict
 
     def to_hdf(self, hdf=None, group_name=None):
         super(FHIAims, self).to_hdf(hdf=hdf, group_name=group_name)
@@ -370,7 +385,7 @@ class FHIAimsControlInput(GenericParameters):
         Loading the default settings for the input file.
         """
 
-        input_str = """
+        input_str = """\
 xc                 pbe
 charge             0.
 spin               none
@@ -672,12 +687,43 @@ class EnergyForcesStressesStreamParser:
             self.stresses_lst.append(self.current_stresses)
 
 
-def collect_output(output_file):
+class MetaInfoStreamParser:
+    _total_time_pattern = re.compile("Total time\s*:\s*([0-9.]*)\s*s")
+
+    FHI_OUT_KEYWORD_TOTAL_TIME = "Total time"
+    FHI_OUT_KEYWORD_AIMS_UUID_TAG = "aims_uuid"
+    FHI_OUT_KEYWORD_VERSION_TAG = "Version"
+
+    def __init__(self):
+        self.version = None
+        self.aims_uuid = None
+        self.total_time = None
+
+    def process_line(self, line):
+
+        line = line.strip(" \t\n")
+
+        if line.startswith(self.FHI_OUT_KEYWORD_VERSION_TAG):
+            self.version = " ".join(line.split()[1:])
+        elif line.startswith(self.FHI_OUT_KEYWORD_AIMS_UUID_TAG):
+            self.aims_uuid = " ".join(line.split(":")[1:]).strip()
+
+        if (self.FHI_OUT_KEYWORD_TOTAL_TIME in line) and (self.total_time is None):
+            line = line.strip()
+            res = self._total_time_pattern.findall(line)
+            if len(res) > 0:
+                self.total_time = res[0]
+
+
+def collect_output(working_directory="", FHI_output_file="FHI.out"):
+    FHI_output_file = os.path.join(working_directory, FHI_output_file)
+
     init_geom_stream_parser = InitialGeometryStreamParser()
     upd_geom_stream_parser = UpdateGeometryStreamParser()
     efs_stream_parser = EnergyForcesStressesStreamParser()
+    metainfo_stream_parser = MetaInfoStreamParser()
 
-    with open(output_file, 'r') as f:
+    with open(FHI_output_file, 'r') as f:
         for line in f:
             line = line.strip(" \t\n")
             if line.startswith("#"):
@@ -686,6 +732,7 @@ def collect_output(output_file):
             init_geom_stream_parser.process_line(line)
             upd_geom_stream_parser.process_line(line)
             efs_stream_parser.process_line(line)
+            metainfo_stream_parser.process_line(line)
 
     if len(efs_stream_parser.free_energies_list) == 0 or len(efs_stream_parser.forces_lst) == 0:
         raise ValueError("No free electronic energies found. Calculation could be broken")
@@ -701,30 +748,36 @@ def collect_output(output_file):
     if len(positions_traj) == 0:
         raise ValueError("No cells or positions info found. Calculation could be broken")
 
-    output_dict = {
+    output_generic_dict = {
         'cells': lattice_vectors_traj,
         'energy_pot': efs_stream_parser.free_energies_list,
         'energy_tot': efs_stream_parser.free_energies_list,
         'forces': efs_stream_parser.forces_lst,
         'positions': positions_traj,
-        # 'structure': structure_dict,
-        # 'energy_tot'
-        # 'pressures'
+        'free_energy': efs_stream_parser.free_energies_list,
+        'energy_corrected': efs_stream_parser.energies_corrected_list,
         # 'steps'
         # 'temperature'
         # 'computation_time'
         # 'unwrapped_positions'
-        # 'volume'
         # 'indices'
     }
 
     if len(efs_stream_parser.stresses_lst) > 0:
-        output_dict["stresses"] = efs_stream_parser.stresses_lst
-        stresses = output_dict["stresses"]
-        output_dict["pressures"] = np.array([-np.trace(stress) / 3.0 for stress in stresses])
+        output_generic_dict["stresses"] = efs_stream_parser.stresses_lst
+        stresses = output_generic_dict["stresses"]
+        output_generic_dict["pressures"] = np.array([-np.trace(stress) / 3.0 for stress in stresses])
 
-    if len(output_dict["cells"]) > 0:
-        cells = output_dict["cells"]
-        output_dict["volume"] = np.array([np.linalg.det(cell) for cell in cells])
+    if len(output_generic_dict["cells"]) > 0:
+        cells = output_generic_dict["cells"]
+        output_generic_dict["volume"] = np.array([np.linalg.det(cell) for cell in cells])
 
-    return output_dict
+    meta_info_dict = {}
+    if metainfo_stream_parser.version is not None:
+        meta_info_dict[EXPORT_FHI_AIMS_VERSION] = metainfo_stream_parser.version
+    if metainfo_stream_parser.aims_uuid is not None:
+        meta_info_dict[EXPORT_AIMS_UUID] = metainfo_stream_parser.aims_uuid
+    if metainfo_stream_parser.total_time is not None:
+        meta_info_dict[EXPORT_TOTAL_TIME] = metainfo_stream_parser.total_time
+
+    return output_generic_dict, meta_info_dict

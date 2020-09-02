@@ -366,7 +366,8 @@ class FHIAims(GenericDFTJob):
         if self.input.kmesh_density_per_inverse_angstrom is not None:
             self.set_kpoints(kmesh_density_per_inverse_angstrom=self.input.kmesh_density_per_inverse_angstrom)
         else:
-            self.set_kpoints(mesh=[1, 1, 1])
+            if not self.input.control_input["k_grid"]:
+                self.set_kpoints(mesh=[1, 1, 1])
 
         self.input.control_input["symmetry_reduced_k_grid"] = ".true."
         self.input.control_input["compute_analytical_stress"] = ".true."

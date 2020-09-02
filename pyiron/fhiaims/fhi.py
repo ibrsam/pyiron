@@ -172,7 +172,11 @@ class FHIAims(GenericDFTJob):
                 else:
                     mesh = None
         else:
+            if mesh is None:
+                if self.input.kmesh_density_per_inverse_angstrom is not None:
+                    mesh = self.get_k_mesh_by_density(kmesh_density_per_inverse_angstrom=self.input.kmesh_density_per_inverse_angstrom)
             self.input.set_kmesh_density(kmesh_density_per_inverse_angstrom)
+
 
         if kpoints_per_angstrom is not None:
             if mesh is not None:

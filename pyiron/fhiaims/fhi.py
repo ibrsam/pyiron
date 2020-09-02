@@ -305,13 +305,16 @@ class FHIAims(GenericDFTJob):
         self.input.write(structure=self.structure, working_directory=self.working_directory)
 
     def collect_output(self):
-        output_dict, meta_info_dict = collect_output(working_directory=self.working_directory,
+        output_dict, output_dft_dict, meta_info_dict = collect_output(working_directory=self.working_directory,
                                                      FHI_output_file='FHI.out')
 
         with self.project_hdf5.open("output") as hdf5_output:
             with hdf5_output.open("generic") as hdf5_generic:
                 for k, v in output_dict.items():
                     hdf5_generic[k] = v
+            with hdf5_output.open("dft") as hdf5_dft:
+                for k, v in output_dft_dict.items():
+                    hdf5_dft[k] = v
             hdf5_output["meta_info"] = meta_info_dict
 
     def to_hdf(self, hdf=None, group_name=None):
@@ -635,6 +638,8 @@ class EnergyForcesStressesStreamParser:
     def __init__(self):
         self.free_energies_list = []
         self.energies_corrected_list = []
+        self.energies_uncorrected_list = []
+
         self.forces_lst = []
         self.stresses_lst = []
 
@@ -661,6 +666,9 @@ class EnergyForcesStressesStreamParser:
         elif self.block_flag and 'Electronic free energy        :' in line:
             F = float(line.split()[5])
             self.free_energies_list.append(F)
+        elif self.block_flag and 'Total energy uncorrected      :' in line:
+            E_uncorr = float(line.split()[5])
+            self.energies_uncorrected_list.append(E_uncorr)
 
         if self.block_flag and "Total atomic forces" in line:
             self.force_block_flag = True
@@ -749,18 +757,22 @@ def collect_output(working_directory="", FHI_output_file="FHI.out"):
         raise ValueError("No cells or positions info found. Calculation could be broken")
 
     output_generic_dict = {
-        'cells': lattice_vectors_traj,
-        'energy_pot': efs_stream_parser.free_energies_list,
-        'energy_tot': efs_stream_parser.free_energies_list,
-        'forces': efs_stream_parser.forces_lst,
-        'positions': positions_traj,
-        'free_energy': efs_stream_parser.free_energies_list,
-        'energy_corrected': efs_stream_parser.energies_corrected_list,
+        'cells': np.array(lattice_vectors_traj),
+        'energy_pot': np.array(efs_stream_parser.free_energies_list),
+        'energy_tot': np.array(efs_stream_parser.free_energies_list),
+        'forces': np.array(efs_stream_parser.forces_lst),
+        'positions': np.array(positions_traj),
         # 'steps'
         # 'temperature'
         # 'computation_time'
         # 'unwrapped_positions'
         # 'indices'
+    }
+
+    output_dft_dict = {
+        'free_energy': np.array(efs_stream_parser.free_energies_list),
+        'energy_corrected': np.array(efs_stream_parser.energies_corrected_list),
+        'energy_uncorrected': np.array(efs_stream_parser.energies_uncorrected_list),
     }
 
     if len(efs_stream_parser.stresses_lst) > 0:
@@ -780,4 +792,4 @@ def collect_output(working_directory="", FHI_output_file="FHI.out"):
     if metainfo_stream_parser.total_time is not None:
         meta_info_dict[EXPORT_TOTAL_TIME] = metainfo_stream_parser.total_time
 
-    return output_generic_dict, meta_info_dict
+    return output_generic_dict, output_dft_dict, meta_info_dict

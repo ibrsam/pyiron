@@ -11,6 +11,7 @@ import numpy as np
 import spglib
 
 from pyiron.atomistics.master.parallel import AtomisticParallelMaster
+from pyiron.base.master.parallel import JobGenerator
 
 __author__ = "Yury Lysogorskiy"
 __copyright__ = "Copyright 2020, ICAMS, RUB"
@@ -268,7 +269,7 @@ def get_C_from_A2(A2, LC):
     return C
 
 
-class ElasticMatrixCalculator(object):
+class ElasticMatrixJobGenerator(JobGenerator):
     zero_strain_job_name = "s_e_0"
 
     @staticmethod
@@ -312,19 +313,25 @@ class ElasticMatrixCalculator(object):
         self._data["epss"] = self.epss
 
 
-    def generate_structures(self):
+    @property
+    def parameter_list(self):
         """
 
         Returns:
 
         """
+        parameter_lst = []
+
+
         self.symmetry_analysis()
         basis_ref = self.basis_ref
         Lag_strain_list = self.Lag_strain_list
         epss = self.epss
 
         if 0.0 in epss:
-            self._structure_dict[self.zero_strain_job_name] = basis_ref.copy()
+            #self._structure_dict[self.zero_strain_job_name] = basis_ref.copy()
+            basis = self._job.ref_job.structure.copy()
+            parameter_lst.append([self.zero_strain_job_name, basis])
 
         for lag_strain in Lag_strain_list:
             Ls_list = Ls_Dic[lag_strain]
@@ -374,10 +381,18 @@ class ElasticMatrixCalculator(object):
 
                 jobname = self.subjob_name(lag_strain, eps)
 
-                self._structure_dict[jobname] = nstruct
+                #self._structure_dict[jobname] = nstruct
+                parameter_lst.append([jobname, nstruct])
 
-        return self._structure_dict
+        return self.parameter_lst
 
+    @staticmethod
+    def job_name(parameter):
+        return parameter[0]
+
+    def modify_job(self, job, parameter):
+        job.structure = parameter[1]
+        return job
 
     def analyse_structures(self, output_dict):
         """
@@ -510,12 +525,12 @@ class ElasticMatrix(AtomisticParallelMaster):
     def create_calculator(self):
         ham = self.ref_job.copy()
         basis_ref = ham.structure.copy()
-        self.property_calculator = ElasticMatrixCalculator(basis_ref,
-                                                           num_of_point=self.input['num_of_points'],
-                                                           eps_range=self.input['eps_range'],
-                                                           sqrt_eta=self.input['sqrt_eta'],
-                                                           fit_order=int(self.input['fit_order'])
-                                                           )
+        self.property_calculator = ElasticMatrixJobGenerator(basis_ref,
+                                                             num_of_point=self.input['num_of_points'],
+                                                             eps_range=self.input['eps_range'],
+                                                             sqrt_eta=self.input['sqrt_eta'],
+                                                             fit_order=int(self.input['fit_order'])
+                                                             )
         super(ElasticMatrix,self).create_calculator()
 
     def create_jobs(self):

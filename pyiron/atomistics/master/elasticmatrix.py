@@ -273,27 +273,28 @@ class ElasticMatrixJobGenerator(JobGenerator):
     zero_strain_job_name = "s_e_0"
 
     @staticmethod
-    def subjob_name(i, eps):
+    def job_name(parameter):
         """
 
         Args:
-            i: 
-            eps: 
+            i:
+            eps:
 
         Returns:
 
         """
-        return ("s_%s_e_%.5f" % (i, eps)).replace(".", "_").replace("-", "m")
+        i, eps = parameter[0]
+        if i!="0":
+            return ("s_%s_e_%.5f" % (i, eps)).replace(".", "_").replace("-", "m")
+        else:
+            return ElasticMatrixJobGenerator.zero_strain_job_name
 
-    def __init__(self, basis_ref, num_of_point=5, eps_range = 0.005, sqrt_eta = True, fit_order = 2):
-        self.basis_ref = basis_ref.copy()
-        self.num_of_point = num_of_point
-        self.eps_range = eps_range
-        self.sqrt_eta = sqrt_eta
-        self.fit_order = fit_order
+    # def __init__(self, basis_ref, job, num_of_point=5, eps_range=0.005, sqrt_eta=True, fit_order=2):
+    def __init__(self, job, no_job_checks=False):
+        super().__init__(job, no_job_checks)
+
         self._data = OrderedDict()
         self._structure_dict = OrderedDict()
-
 
     def symmetry_analysis(self):
         """
@@ -305,13 +306,12 @@ class ElasticMatrixJobGenerator(JobGenerator):
         self._data["SGN"] = self.SGN
         self.v0 = self.basis_ref.get_volume()
         self._data["v0"] = self.v0
-        self.LC= get_symmetry_family_from_SGN(self.SGN)
+        self.LC = get_symmetry_family_from_SGN(self.SGN)
         self._data["LC"] = self.LC
-        self.Lag_strain_list= get_LAG_Strain_List(self.LC)
+        self.Lag_strain_list = get_LAG_Strain_List(self.LC)
         self._data["Lag_strain_list"] = self.Lag_strain_list
         self.epss = np.linspace(-self.eps_range, self.eps_range, self.num_of_point)
         self._data["epss"] = self.epss
-
 
     @property
     def parameter_list(self):
@@ -320,8 +320,15 @@ class ElasticMatrixJobGenerator(JobGenerator):
         Returns:
 
         """
-        parameter_lst = []
 
+        self.basis_ref = self._job.ref_job.structure.copy()
+        self.num_of_point = int(self._job.input["num_of_points"])
+        self.eps_range = self._job.input["eps_range"]
+        self.sqrt_eta = self._job.input["sqrt_eta"]
+        self.fit_order = int(self._job.input["fit_order"])
+
+
+        parameter_lst = []
 
         self.symmetry_analysis()
         basis_ref = self.basis_ref
@@ -329,9 +336,9 @@ class ElasticMatrixJobGenerator(JobGenerator):
         epss = self.epss
 
         if 0.0 in epss:
-            #self._structure_dict[self.zero_strain_job_name] = basis_ref.copy()
+            # self._structure_dict[self.zero_strain_job_name] = basis_ref.copy()
             basis = self._job.ref_job.structure.copy()
-            parameter_lst.append([self.zero_strain_job_name, basis])
+            parameter_lst.append([("0",0), basis])
 
         for lag_strain in Lag_strain_list:
             Ls_list = Ls_Dic[lag_strain]
@@ -379,19 +386,20 @@ class ElasticMatrixJobGenerator(JobGenerator):
                 nstruct = basis_ref.copy()
                 nstruct.set_cell(scell, scale_atoms=True)
 
-                jobname = self.subjob_name(lag_strain, eps)
+                # jobname = self.subjob_name(lag_strain, eps)
 
-                #self._structure_dict[jobname] = nstruct
-                parameter_lst.append([jobname, nstruct])
-
-        return self.parameter_lst
-
-    @staticmethod
-    def job_name(parameter):
-        return parameter[0]
+                # self._structure_dict[jobname] = nstruct
+                parameter_lst.append([(lag_strain, eps), nstruct])
+        return parameter_lst
 
     def modify_job(self, job, parameter):
         job.structure = parameter[1]
+
+        if self._job.input["relax_atoms"]:
+            job.calc_minimize(pressure=None)
+        else:
+            job.calc_static()
+
         return job
 
     def analyse_structures(self, output_dict):
@@ -413,7 +421,7 @@ class ElasticMatrixJobGenerator(JobGenerator):
             strain_energy.append([])
             for eps in epss:
                 if not eps == 0.0:
-                    jobname = self.subjob_name(lag_strain, eps)
+                    jobname = self.job_name(((lag_strain, eps), ))
                     ene = output_dict[jobname]
                 else:
                     ene = ene0
@@ -473,7 +481,6 @@ class ElasticMatrixJobGenerator(JobGenerator):
         eigval = np.linalg.eig(C)
         self._data['C_eigval'] = eigval
 
-
     def fit_elastic_matrix(self):
         """
 
@@ -488,9 +495,8 @@ class ElasticMatrixJobGenerator(JobGenerator):
         fit_order = int(self.fit_order)
         for s_e in strain_ene:
             ss = np.transpose(s_e)
-            coeffs = np.polyfit(ss[0], ss[1]/v0, fit_order)
+            coeffs = np.polyfit(ss[0], ss[1] / v0, fit_order)
             A2.append(coeffs[fit_order - 2])
-
 
         A2 = np.array(A2)
         C = get_C_from_A2(A2, LC)
@@ -508,7 +514,6 @@ class ElasticMatrixJobGenerator(JobGenerator):
 
 
 class ElasticMatrix(AtomisticParallelMaster):
-
     hdf_storage_group = "elasticmatrix"
 
     def __init__(self, project, job_name="elasticmatrix"):
@@ -520,61 +525,27 @@ class ElasticMatrix(AtomisticParallelMaster):
         self.input['eps_range'] = (0.005, 'strain variation')
         self.input['relax_atoms'] = (True, 'relax atoms in deformed structure')
         self.input['sqrt_eta'] = (True, 'calculate self-consistently sqrt of stress matrix eta')
+        self._job_generator = ElasticMatrixJobGenerator(self)
+        self._data = OrderedDict()
 
-
-    def create_calculator(self):
-        ham = self.ref_job.copy()
-        basis_ref = ham.structure.copy()
-        self.property_calculator = ElasticMatrixJobGenerator(basis_ref,
-                                                             num_of_point=self.input['num_of_points'],
-                                                             eps_range=self.input['eps_range'],
-                                                             sqrt_eta=self.input['sqrt_eta'],
-                                                             fit_order=int(self.input['fit_order'])
-                                                             )
-        super(ElasticMatrix,self).create_calculator()
-
-    def create_jobs(self):
-        ham = self.ref_job.copy()
-        basis_ref = ham.structure.copy()
-        self.create_calculator()
-        self.save_data_to_hdf()
-        job_lst = []
-
-        self.submission_status.submitted_jobs = 0
-        for job_name, structure in self.structure_dict.items():
-            if self.job_id and self.project.db.get_item_by_id(self.job_id)['status'] not in ['finished', 'aborted']:
-                ham = self._create_child_job(job_name)
-                if ham.server.run_mode.non_modal and self.get_child_cores() + ham.server.cores > self.server.cores:
-                    break
-                self._logger.debug('create job: %s %s', ham.job_info_str, ham.master_id)
-                ham.structure = structure
-                if self.input["relax_atoms"]:
-                    ham.calc_minimize(pressure=None)
-                else:
-                    ham.calc_static()
-                self._logger.info('ElasticMatrix: run job {}'.format(ham.job_name))
-                self.submission_status.submit_next()
-                if not ham.status.finished:
-                    ham.run()
-                self._logger.info('ElasticMatrix: finished job {}'.format(ham.job_name))
-                self.ref_job.structure = basis_ref
-                if ham.server.run_mode.thread:
-                    job_lst.append(ham._process)
-            else:
-                self.refresh_job_status()
-        self.structure = basis_ref
-        process_lst = [process.communicate() for process in job_lst if process]
-        self.status.suspended = True
+    def list_structures(self):
+        if self.structure is not None:
+            return [struct for _, struct in self._job_generator.parameter_list]
+        else:
+            return []
 
     def collect_output(self):
-        self.pre_collect_output()
+        #self.pre_collect_output()
 
         energies = {}
-        self._data["id"]=[]
+        self._data["id"] = []
         for job_id in self.child_ids:
             ham = self.project_hdf5.inspect(job_id)
             en = ham["output/generic/energy_tot"][-1]
             energies[ham.job_name] = en
             self._data["id"].append(ham.job_id)
 
-        self.analyse_structures(energies)
+        self._job_generator.analyse_structures(energies)
+
+        with self.project_hdf5.open("output") as hdf5_out:
+            hdf5_out[self.hdf_storage_group] = self._job_generator._data

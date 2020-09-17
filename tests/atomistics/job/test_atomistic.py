@@ -6,7 +6,7 @@ import unittest
 import numpy as np
 import os
 from pyiron.project import Project
-from pyiron.base.generic.hdfio import ProjectHDFio
+from pyiron_base import ProjectHDFio
 from pyiron.atomistics.job.atomistic import AtomisticGenericJob
 from pyiron.atomistics.structure.atoms import Atoms, CrystalStructure
 import warnings
@@ -30,7 +30,7 @@ class TestAtomisticGenericJob(unittest.TestCase):
     def tearDownClass(cls):
         cls.execution_path = os.path.dirname(os.path.abspath(__file__))
         project = Project(os.path.join(cls.execution_path, "test_job"))
-        project.remove_jobs(recursive=True)
+        project.remove_jobs_silently(recursive=True)
         project.remove(enable=True)
 
     def test_attributes(self):

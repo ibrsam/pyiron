@@ -19,7 +19,7 @@ from pyiron.atomistics.structure.periodic_table import (
     PeriodicTable,
     ChemicalElement
 )
-from pyiron.base.settings.generic import Settings
+from pyiron_base import Settings
 from scipy.spatial import cKDTree, Voronoi
 import spglib
 
@@ -347,7 +347,7 @@ class Atoms(ASEAtoms):
         Save the object in a HDF5 file
 
         Args:
-            hdf (pyiron.base.generic.hdfio.FileHDFio): HDF path to which the object is to be saved
+            hdf (pyiron_base.generic.hdfio.FileHDFio): HDF path to which the object is to be saved
             group_name (str):
                 Group name with which the object should be stored. This same name should be used to retrieve the object
 
@@ -392,12 +392,14 @@ class Atoms(ASEAtoms):
             if self._high_symmetry_path is not None:
                 hdf_structure["high_symmetry_path"] = self._high_symmetry_path
 
+            hdf_structure["info"] = self.info
+
     def from_hdf(self, hdf, group_name="structure"):
         """
         Retrieve the object from a HDF5 file
 
         Args:
-            hdf (pyiron.base.generic.hdfio.FileHDFio): HDF path to which the object is to be saved
+            hdf (pyiron_base.generic.hdfio.FileHDFio): HDF path to which the object is to be saved
             group_name (str): Group name from which the Atoms object is retreived.
 
         Returns:
@@ -479,6 +481,8 @@ class Atoms(ASEAtoms):
                 self._high_symmetry_path = None
                 if "high_symmetry_path" in hdf_atoms.list_nodes():
                     self._high_symmetry_path = hdf_atoms["high_symmetry_path"]
+                if "info" in hdf_atoms.list_nodes():
+                    self.info = hdf_atoms["info"]
                 return self
 
         else:
@@ -2412,7 +2416,7 @@ class Atoms(ASEAtoms):
         )
 
         return Atoms(
-            symbols=list(self.get_chemical_symbols()), positions=coords, cell=cell
+            symbols=list(self.get_chemical_symbols()), positions=coords, cell=cell, pbc=self.pbc
         )
 
     def get_primitive_cell(self, symprec=1e-5, angle_tolerance=-1.0):
@@ -2442,7 +2446,7 @@ class Atoms(ASEAtoms):
         el_lst = [el_dict[i_a] for i_a in atomic_numbers]
 
         # convert lattice vectors to standard (experimental feature!) TODO:
-        red_structure = Atoms(elements=el_lst, scaled_positions=coords, cell=cell)
+        red_structure = Atoms(elements=el_lst, scaled_positions=coords, cell=cell, pbc=self.pbc)
         space_group = red_structure.get_spacegroup(symprec)["Number"]
         # print "space group: ", space_group
         if space_group == 225:  # fcc
@@ -2594,6 +2598,16 @@ class Atoms(ASEAtoms):
         else:
             return dist
 
+    def append(self, atom):
+        if isinstance(atom, ASEAtom):
+            super(Atoms, self).append(atom=atom)
+        else:
+            new_atoms = atom.copy()
+            if new_atoms.pbc.all() and np.isclose(new_atoms.get_volume(), 0):
+                new_atoms.cell = self.cell
+                new_atoms.pbc = self.pbc
+            self += new_atoms
+
     def extend(self, other):
         """
         Extend atoms object by appending atoms from *other*. (Extending the ASE function)
@@ -2614,7 +2628,7 @@ class Atoms(ASEAtoms):
             warnings.warn("Converting ase structure to pyiron before appending the structure")
             other = ase_to_pyiron(other)
 
-        new_indices = other.indices
+        new_indices = other.indices.copy()
         super(Atoms, self).extend(other=other)
         if isinstance(other, Atoms):
             if not np.allclose(self.cell, other.cell):
@@ -2887,7 +2901,7 @@ class Atoms(ASEAtoms):
     __mul__ = repeat
 
     def __imul__(self, vec):
-        if isinstance(vec, int):
+        if isinstance(vec, (int, np.integer)):
             vec = [vec] * self.dimension
         initial_length = len(self)
         if not hasattr(vec, '__len__'):
@@ -2973,7 +2987,7 @@ class Atoms(ASEAtoms):
             from ase.constraints import FixAtoms
 
             return FixAtoms(indices=[atom_ind for atom_ind in
-                                     range(len(self)) if any(self.selective_dynamics[atom_ind])])
+                                     range(len(self)) if not any(self.selective_dynamics[atom_ind])])
         else:
             return None
 
@@ -2986,9 +3000,9 @@ class Atoms(ASEAtoms):
                 self.add_tag(selective_dynamics=None)
             for atom_ind in range(len(self)):
                 if atom_ind in constraint.index:
-                    self.selective_dynamics[atom_ind] = [True, True, True]
-                else:
                     self.selective_dynamics[atom_ind] = [False, False, False]
+                else:
+                    self.selective_dynamics[atom_ind] = [True, True, True]
 
     def apply_strain(self, epsilon, return_box=False):
         """

@@ -9,9 +9,7 @@ import numpy as np
 import warnings
 
 from pyiron.atomistics.structure.atoms import Atoms
-from pyiron.base.generic.parameters import GenericParameters
-from pyiron.base.job.generic import GenericJob as GenericJobCore
-from pyiron.base.master.generic import GenericMaster
+from pyiron_base import GenericParameters, GenericMaster, GenericJob as GenericJobCore
 
 try:
     from pyiron.base.project import ProjectGUI
@@ -282,9 +280,12 @@ class AtomisticGenericJob(GenericJobCore):
 
     def store_structure(self):
         """
+        Create :class:`~.StructureContainer` job with the initial structure of
+        the job and sets that jobs :attr:`~.parent_id` from this job.
 
         Returns:
-
+            :class:`~.StructureContainer`: job containing initial structure of
+            this job
         """
         if self.structure is not None:
             structure_container = self.create_job(
@@ -293,6 +294,7 @@ class AtomisticGenericJob(GenericJobCore):
             )
             structure_container.structure = self.structure
             self.parent_id = structure_container.job_id
+            return structure_container
         else:
             ValueError("There is no structure attached to the current Job.")
 

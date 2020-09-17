@@ -6,15 +6,12 @@ from __future__ import print_function
 import os
 import posixpath
 from string import punctuation
-from pyiron.base.project.generic import Project as ProjectCore
-
+from shutil import copyfile
+from pyiron_base import Settings, ProjectHDFio, JobType, JobTypeChoice, Project as ProjectCore
 try:
-    from pyiron.base.project.gui import ProjectGUI
+    from pyiron_base import ProjectGUI
 except (ImportError, TypeError, AttributeError):
     pass
-from pyiron.base.settings.generic import Settings
-from pyiron.base.generic.hdfio import ProjectHDFio
-from pyiron.base.job.jobtype import JobType, JobTypeChoice
 from pyiron.atomistics.generic.object_type import ObjectType, ObjectTypeChoice
 from pyiron.atomistics.structure.periodic_table import PeriodicTable
 from pyiron.lammps.potential import LammpsPotentialFile
@@ -109,9 +106,9 @@ class Project(ProjectCore):
 
     def __init__(self, path="", user=None, sql_query=None, default_working_directory=False):
         super(Project, self).__init__(
-            path=path, 
-            user=user, 
-            sql_query=sql_query, 
+            path=path,
+            user=user,
+            sql_query=sql_query,
             default_working_directory=default_working_directory
         )
         self.job_type = JobTypeChoice()
@@ -257,7 +254,7 @@ class Project(ProjectCore):
         return job
 
     def import_single_calculation(
-        self, project_to_import_from, rel_path=None, job_type="Vasp"
+        self, project_to_import_from, rel_path=None, job_type="Vasp", copy_raw_files=False
     ):
         """
 
@@ -265,6 +262,7 @@ class Project(ProjectCore):
             rel_path:
             project_to_import_from:
             job_type (str): Type of the calculation which is going to be imported
+            copy_raw_files (bool): Copy
         """
         if job_type not in ["Vasp", "KMC"]:
             raise ValueError("The job_type is not supported.")
@@ -291,26 +289,32 @@ class Project(ProjectCore):
             ham._job_id = self.db.add_item_dict(ham.db_entry())
             ham.refresh_job_status()
             print("job was stored with the job ID ", str(ham._job_id))
+            if not os.path.abspath(project_to_import_from):
+                project_to_import_from = os.path.join(self.path, project_to_import_from)
             try:
-                if os.path.abspath(project_to_import_from):
-                    ham.from_directory(project_to_import_from.replace("\\", "/"))
-                else:
-                    ham.from_directory(
-                        os.path.join(self.path, project_to_import_from).replace(
-                            "\\", "/"
-                        )
-                    )
+                ham.from_directory(project_to_import_from.replace("\\", "/"))
             except:
                 ham.status.aborted = True
+            else:
+                ham._import_directory = None
+                if copy_raw_files:
+                    os.makedirs(ham.working_directory, exist_ok=True)
+                    for f in os.listdir(project_to_import_from):
+                        src=os.path.join(project_to_import_from, f)
+                        if os.path.isfile(src):
+                            copyfile(
+                                src=src,
+                                dst=os.path.join(ham.working_directory, f)
+                            )
+                    ham.compress()
 
-    def import_from_path(self, path, recursive=True):
+    def import_from_path(self, path, recursive=True, copy_raw_files=False):
         """
 
         Args:
-            path:
-            recursive:
-
-        Returns:
+            path (str):
+            recursive (bool):
+            copy_raw_files (bool):
 
         """
         if os.path.abspath(path):
@@ -322,13 +326,13 @@ class Project(ProjectCore):
         if recursive:
             for x in os.walk(search_path):
                 self._calculation_validation(
-                    x[0], x[2], rel_path=posixpath.relpath(x[0], search_path)
+                    x[0], x[2], rel_path=posixpath.relpath(x[0], search_path), copy_raw_files=copy_raw_files
                 )
         else:
             abs_path = "/".join(search_path.replace("\\", "/").split("/")[:-1])
             rel_path = posixpath.relpath(abs_path, self.path)
             self._calculation_validation(
-                search_path, os.listdir(search_path), rel_path=rel_path
+                search_path, os.listdir(search_path), rel_path=rel_path, copy_raw_files=copy_raw_files
             )
 
     def get_structure(self, job_specifier, iteration_step=-1, wrap_atoms=True):
@@ -362,16 +366,14 @@ class Project(ProjectCore):
         else:
             return snapshot
 
-    def _calculation_validation(self, path, files_available, rel_path=None):
+    def _calculation_validation(self, path, files_available, rel_path=None, copy_raw_files=False):
         """
 
         Args:
             path:
             files_available:
             rel_path:
-
-        Returns:
-
+            copy_raw_files (bool):
         """
         if (
             "OUTCAR" in files_available
@@ -380,89 +382,13 @@ class Project(ProjectCore):
             or "vasprun.xml.bz2" in files_available
             or "vasprun.xml.gz" in files_available
         ):
-            self.import_single_calculation(path, rel_path=rel_path, job_type="Vasp")
+            self.import_single_calculation(path, rel_path=rel_path, job_type="Vasp", copy_raw_files=copy_raw_files)
         if (
             "incontrol.dat" in files_available
             and "lattice.out" in files_available
             and "lattice.inp" in files_available
         ):
-            self.import_single_calculation(path, rel_path=rel_path, job_type="KMC")
-
-    @staticmethod
-    def list_publications(bib_format="dict"):
-        """
-        List the publications used in this project.
-
-        Args:
-            bib_format (str): ['dict', 'bibtex', 'apa']
-
-        Returns:
-            list: list of publications in Bibtex format.
-        """
-
-        def get_bibtex(key, value):
-            total_keys = [
-                "title",
-                "journal",
-                "volume",
-                "issue",
-                "number",
-                "pages",
-                "numpages",
-                "year",
-                "month",
-                "publisher",
-                "url",
-                "doi",
-                "issn",
-            ]
-            bibtex_str = (
-                "@article{"
-                + key
-                + ",\n"
-                + "    author={"
-                + " and ".join(value["author"])
-                + "},\n"
-            )
-            for key in total_keys:
-                if key in value.keys():
-                    bibtex_str += "    " + key + "={" + value[key] + "},\n"
-            bibtex_str += "}\n"
-            return bibtex_str
-
-        def get_apa(value):
-            apa_str = " & ".join(value["author"])
-            if "year" in value.keys():
-                apa_str += " (" + value["year"] + "). "
-            if "title" in value.keys():
-                apa_str += value["title"] + ". "
-            if "journal" in value.keys():
-                apa_str += value["journal"] + ", "
-            if "volume" in value.keys():
-                apa_str += value["volume"] + ", "
-            if "pages" in value.keys():
-                apa_str += value["pages"] + ". "
-            if "doi" in value.keys():
-                apa_str += "doi: " + value["doi"] + "\n"
-            return apa_str
-
-        publication_dict = s.publication_lst
-        if bib_format.lower() == "dict":
-            return publication_dict
-        elif bib_format.lower() == "bibtex":
-            total_str = ""
-            for pub in publication_dict:
-                for key, value in pub.items():
-                    total_str += get_bibtex(key, value)
-            return total_str
-        elif bib_format.lower() == "apa":
-            total_str = ""
-            for pub in publication_dict:
-                for key, value in pub.items():
-                    total_str += get_apa(value)
-            return total_str
-        else:
-            raise ValueError("Supported Bibformats are ['dict', 'bibtex', 'apa']")
+            self.import_single_calculation(path, rel_path=rel_path, job_type="KMC", copy_raw_files=copy_raw_files)
 
     @staticmethod
     def create_structure(element, bravais_basis, lattice_constant):
@@ -685,7 +611,7 @@ class Project(ProjectCore):
         """
         ProjectGUI(self)
 
-    def create_pipeline(self, job, step_lst):
+    def create_pipeline(self, job, step_lst, delete_existing_job=False):
         """
         Create a job pipeline
 
@@ -696,4 +622,4 @@ class Project(ProjectCore):
         Returns:
             FlexibleMaster:
         """
-        return pipe(project=self, job=job, step_lst=step_lst)
+        return pipe(project=self, job=job, step_lst=step_lst, delete_existing_job=delete_existing_job)

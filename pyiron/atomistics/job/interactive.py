@@ -3,8 +3,7 @@
 # Distributed under the terms of "New BSD License", see the LICENSE file.
 
 import numpy as np
-from pyiron.base.settings.generic import Settings
-from pyiron.base.job.interactive import InteractiveBase
+from pyiron_base import Settings, InteractiveBase
 from pyiron.atomistics.structure.atoms import Atoms
 from pyiron.atomistics.structure.periodic_table import PeriodicTable
 from pyiron.atomistics.job.atomistic import AtomisticGenericJob, GenericOutput
@@ -306,6 +305,7 @@ class GenericInteractive(AtomisticGenericJob, InteractiveBase):
                     symbols=np.array([el_lst[el] for el in indices]),
                     positions=positions,
                     cell=self.output.cells[iteration_step],
+                    pbc=self.structure.pbc,
                 )
                 # Update indicies to match the indicies in the cache.
                 atoms.set_species([self._periodic_table.element(el) for el in el_lst])

@@ -16,8 +16,7 @@ from phonopy.file_IO import write_FORCE_CONSTANTS
 from pyiron.atomistics.structure.atoms import Atoms
 from pyiron.atomistics.master.parallel import AtomisticParallelMaster
 from pyiron.atomistics.structure.phonopy import publication as phonopy_publication
-from pyiron.base.master.parallel import JobGenerator
-from pyiron.base.settings.generic import Settings
+from pyiron_base import JobGenerator, Settings
 
 __author__ = "Jan Janssen, Yury Lysogorskiy"
 __copyright__ = (
@@ -238,7 +237,7 @@ class PhonopyJob(AtomisticParallelMaster):
         Returns:
 
         """
-        if self.server.run_mode.interactive:
+        if self.ref_job.server.run_mode.interactive:
             forces_lst = self.project_hdf5.inspect(self.child_ids[0])[
                 "output/generic/forces"
             ]

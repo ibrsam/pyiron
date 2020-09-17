@@ -10,8 +10,7 @@ import numpy as np
 from molmod.units import *
 
 from pyiron.atomistics.structure.atoms import Atoms
-from pyiron.base.generic.hdfio import ProjectHDFio
-from pyiron.base.project.generic import Project
+from pyiron_base import ProjectHDFio, Project
 
 from pyiron.quickff.quickff import QuickFFInput
 from pyiron.quickff.quickff import QuickFF
@@ -35,7 +34,7 @@ class TestQuickFF(unittest.TestCase):
         def tearDownClass(cls):
             cls.execution_path = os.path.dirname(os.path.abspath(__file__))
             project = Project(os.path.join(cls.execution_path, "test_quickff"))
-            project.remove_jobs(recursive=True)
+            project.remove_jobs_silently(recursive=True)
             project.remove(enable=True)
 
         def setUp(self):

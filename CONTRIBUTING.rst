@@ -137,6 +137,37 @@ To get the developmental (git) version of pyiron,
   conda activate pyiron_dev
   conda install conda-build
   conda develop pyiron
+  
+**Deploy development version to a managed environment**
+
+If you want to use a development version of pyiron in a managed environment where a version of pyiron is
+already installed outside of your control (e.g. on the cmti/cmfe cluster), you can still preload a local
+checkout of the repo, while using the dependencies already installed.  Assuming pyiron and dependencies
+are already installed and setup, clone the repository to a location of your choice
+
+.. code-block::
+  
+  mkdir -p ~/software
+  cd ~/software
+  git clone https://github.com/pyiron/pyiron.git
+  
+add this folder to your python path by adding this line to your `~/.profile`
+
+.. code-block::
+
+  export PYTHONPATH="$HOME/software/pyiron:$PYTHONPATH"
+  
+and finally restart any jupyter or jupyterhub session you might still have running.  Within this folder
+you can then check out any local branchen, push your own dev branches, etc and python will automatically
+use this version over the system-wide installation.  Check that it works by running the following cell
+
+.. code-block::
+
+  import pyiron
+  print(pyiron.__file__)
+  
+If it doesn't print the path of your checkout, check that you restarted all the relevant shell sessions
+and that the environment variables are correctly updated.
 
 **Local Testing**
 
@@ -343,7 +374,7 @@ So for both conda and pip both the prereleases as well as the official releases 
 .. _Max Planck Institut für Eisenforschung: https://mpie.de
 .. _github page: https://github.com/pyiron
 .. _issues page: https://github.com/pyiron/pyiron/issues
-.. _FAQ page: https://github.com/pyiron/pyiron/docs/source/faq.html
+.. _FAQ page: https://pyiron.readthedocs.io/en/latest/source/faq.html
 .. _bugs: https://github.com/pyiron/pyiron/issues?q=is%3Aopen+is%3Aissue+label%3A%22bug%22
 .. _Good first issues: https://github.com/pyiron/pyiron/issues?q=is%3Aopen+is%3Aissue+label%3A%22good+first+issue%22
 .. _Help wanted issues: https://github.com/pyiron/pyiron/issues?q=is%3Aissue+is%3Aopen+label%3A%22help+wanted%22

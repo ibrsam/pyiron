@@ -3,10 +3,17 @@ channels:
 dependencies:
 - python
 - pyiron
+- pyiron_base
 - lammps
+- iprpy-data
 - gpaw
-- sphinxdft
+- sphinxdft >=2.7.0
+- sphinxdft-data
 - nglview
 - seaborn
 - ovito
-- jupyterlab=1.1.4
+- pyscal
+- jupyterlab
+- pyiron-data
+- sqsgenerator
+- pymatgen

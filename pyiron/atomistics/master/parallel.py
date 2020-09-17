@@ -6,13 +6,12 @@ from __future__ import print_function
 from collections import OrderedDict
 import inspect
 from pyiron.atomistics.structure.atoms import Atoms
-from pyiron.base.master.parallel import ParallelMaster, JobGenerator
+from pyiron_base import ParallelMaster, JobGenerator, get_function_from_string
 from pyiron.atomistics.job.atomistic import AtomisticGenericJob
-from pyiron.base.master.generic import get_function_from_string
 
 __author__ = "Jan Janssen"
 __copyright__ = (
-    "Copyright 2019, Max-Planck-Institut für Eisenforschung GmbH - "
+    "Copyright 2020, Max-Planck-Institut für Eisenforschung GmbH - "
     "Computational Materials Design (CM) Department"
 )
 __version__ = "1.0"
@@ -149,3 +148,50 @@ class MapJobGenerator(JobGenerator):
 
     def modify_job(self, job, parameter):
         return self._job._map_function(job, parameter)
+
+
+def pipe(project, job, step_lst, delete_existing_job=False):
+    """
+    Create a job pipeline
+
+    Args:
+        project (pyiron.Project): Project to calculate pipeline in
+        job (AtomisticGenericJob): Template for the calculation
+        step_lst (list): List of functions which create calculations
+
+    Returns:
+        FlexibleMaster:
+    """
+    job_lst_master = project.create_job(project.job_type.FlexibleMaster, job.job_name + '_lstmaster', delete_existing_job=delete_existing_job)
+    if job_lst_master.status.finished:
+        return job_lst_master
+    else:
+        for i, step_funct in enumerate(step_lst):
+            job_lst_master.append(step_funct(job))
+            if i > 0 and 'for_each_structure' in step_funct.__name__:
+                job_lst_master.function_lst.append(_structure_many_to_many)
+            elif i > 0:
+                job_lst_master.function_lst.append(_structure_one_to_one)
+        return job_lst_master
+
+
+def _structure_one_to_one(job_prev, job_next):
+    """
+    Copy final structure from previous job to the input structure of the next job
+
+    Args:
+        job_prev (AtomisticGenericJob): previous Job object
+        job_next (AtomisticGenericJob): next Job object
+    """
+    job_next.structure = job_prev.get_structure(iteration_step=-1)
+
+
+def _structure_many_to_many(job_prev, job_next):
+    """
+    Copy list of final structures from previous job to the input structure list of the next job
+
+    Args:
+        job_prev (AtomisticParallelMaster): previous Job object
+        job_next (AtomisticParallelMaster): next Job object
+    """
+    job_next.structure_lst = job_prev.list_structures()

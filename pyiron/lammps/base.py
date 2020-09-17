@@ -6,7 +6,6 @@ from __future__ import print_function, unicode_literals
 import os
 import posixpath
 
-import sys
 import h5py
 import numpy as np
 import pandas as pd
@@ -15,15 +14,14 @@ from io import StringIO
 
 from pyiron.lammps.potential import LammpsPotentialFile, PotentialAvailable
 from pyiron.atomistics.job.atomistic import AtomisticGenericJob
-from pyiron.base.settings.generic import Settings
-from pyiron.base.pyio.parser import Logstatus, extract_data_from_file
+from pyiron_base import Settings, extract_data_from_file
 from pyiron.lammps.control import LammpsControl
 from pyiron.lammps.potential import LammpsPotential
 from pyiron.lammps.structure import LammpsStructure, UnfoldingPrism
 
 __author__ = "Joerg Neugebauer, Sudarsan Surendralal, Jan Janssen"
 __copyright__ = (
-    "Copyright 2019, Max-Planck-Institut für Eisenforschung GmbH "
+    "Copyright 2020, Max-Planck-Institut für Eisenforschung GmbH "
     "- Computational Materials Design (CM) Department"
 )
 __version__ = "1.0"
@@ -160,6 +158,15 @@ class LammpsBase(AtomisticGenericJob):
             potential = potential_filename
         else:
             raise TypeError("Potentials have to be strings or pandas dataframes.")
+        if self.structure:
+            structure_elements = self.structure.get_species_symbols()
+            potential_elements = list(potential["Species"])[0]
+            if not set(structure_elements).issubset(potential_elements):
+                raise ValueError("Potential {} does not support elements "
+                                 "in structure {}.".format(
+                                     potential_elements,
+                                     structure_elements
+                                ))
         self.input.potential.df = potential
         for val in ["units", "atom_style", "dimension"]:
             v = self.input.potential[val]
@@ -212,15 +219,20 @@ class LammpsBase(AtomisticGenericJob):
 
     def validate_ready_to_run(self):
         """
-
-        Returns:
-
+        Validating input parameters before LAMMPS run
         """
         super(LammpsBase, self).validate_ready_to_run()
         if self.potential is None:
             raise ValueError(
                 "This job does not contain a valid potential: {}".format(self.job_name)
             )
+        scaled_positions = self.structure.get_scaled_positions(wrap=False)
+        # Check if atoms located outside of non periodic box
+        conditions = [(np.min(scaled_positions[:, i]) < 0.0 or
+                       np.max(scaled_positions[:, i]) > 1.0) and not self.structure.pbc[i] for i in range(3)]
+        if any(conditions):
+            raise ValueError("You have atoms located outside the non-periodic boundaries "
+                             "of the defined simulation box")
 
     def get_potentials_for_structure(self):
         """
@@ -425,7 +437,7 @@ class LammpsBase(AtomisticGenericJob):
             positions = [
                 pos_i.tolist() for pos_i in h5md["/particles/all/position/value"]
             ]
-            time = [time_i.tolist() for time_i in h5md["/particles/all/position/step"]]
+            steps = [steps_i.tolist() for steps_i in h5md["/particles/all/position/step"]]
             forces = [for_i.tolist() for for_i in h5md["/particles/all/force/value"]]
             # following the explanation at: http://nongnu.org/h5md/h5md.html
             cell = [
@@ -436,7 +448,7 @@ class LammpsBase(AtomisticGenericJob):
         with self.project_hdf5.open("output/generic") as h5_file:
             h5_file["forces"] = np.array(forces)
             h5_file["positions"] = np.array(positions)
-            h5_file["time"] = np.array(time)
+            h5_file["steps"] = np.array(steps)
             h5_file["cells"] = cell
             h5_file["indices"] = self.remap_indices(indices)
 
@@ -537,6 +549,12 @@ class LammpsBase(AtomisticGenericJob):
             axis=-1,
         ).reshape(-1, 3, 3).astype('float64')
         pressures *= 0.0001  # bar -> GPa
+
+        # Rotate pressures from Lammps frame to pyiron frame if necessary
+        rotation_matrix = self._prism.R.T
+        if np.matrix.trace(rotation_matrix) != 3:
+            pressures = rotation_matrix.T @ pressures @ rotation_matrix
+
         df = df.drop(
             columns=df.columns[
                 ((df.columns.str.len() == 3) & df.columns.str.startswith("P"))
@@ -551,6 +569,8 @@ class LammpsBase(AtomisticGenericJob):
                 axis=-1,
             ).reshape(-1, 3, 3).astype('float64')
             pressures *= 0.0001  # bar -> GPa
+            if np.matrix.trace(rotation_matrix) != 3:
+                pressures = rotation_matrix.T @ pressures @ rotation_matrix
             df = df.drop(
                 columns=df.columns[
                     (df.columns.str.startswith("mean_pressure") & df.columns.str.endswith(']'))
@@ -565,16 +585,24 @@ class LammpsBase(AtomisticGenericJob):
 
     def calc_minimize(
             self,
-            e_tol=0.0,
-            f_tol=1e-4,
+            ionic_energy_tolerance=0.0,
+            ionic_force_tolerance=1e-4,
+            e_tol=None,
+            f_tol=None,
             max_iter=1000000,
             pressure=None,
             n_print=100,
             style='cg'
     ):
-        self._ensure_requested_cell_deformation_allowed(pressure)
+        rotation_matrix = self._get_rotation_matrix(pressure=pressure)
         # Docstring set programmatically -- Ensure that changes to signature or defaults stay consistent!
+        if e_tol is not None:
+            ionic_energy_tolerance = e_tol
+        if f_tol is not None:
+            ionic_force_tolerance = f_tol
         super(LammpsBase, self).calc_minimize(
+            ionic_energy_tolerance=ionic_energy_tolerance,
+            ionic_force_tolerance=ionic_force_tolerance,
             e_tol=e_tol,
             f_tol=f_tol,
             max_iter=max_iter,
@@ -582,12 +610,13 @@ class LammpsBase(AtomisticGenericJob):
             n_print=n_print,
         )
         self.input.control.calc_minimize(
-            e_tol=e_tol,
-            f_tol=f_tol,
+            ionic_energy_tolerance=ionic_energy_tolerance,
+            ionic_force_tolerance=ionic_force_tolerance,
             max_iter=max_iter,
             pressure=pressure,
             n_print=n_print,
             style=style,
+            rotation_matrix=rotation_matrix
         )
     calc_minimize.__doc__ = LammpsControl.calc_minimize.__doc__
 
@@ -621,7 +650,7 @@ class LammpsBase(AtomisticGenericJob):
             warnings.warn(
                 "calc_md() is not implemented for the non modal interactive mode use calc_static()!"
             )
-        self._ensure_requested_cell_deformation_allowed(pressure)
+        rotation_matrix = self._get_rotation_matrix(pressure=pressure)
         super(LammpsBase, self).calc_md(
             temperature=temperature,
             pressure=pressure,
@@ -650,6 +679,7 @@ class LammpsBase(AtomisticGenericJob):
             delta_temp=delta_temp,
             delta_press=delta_press,
             job_name=self.job_name,
+            rotation_matrix=rotation_matrix
         )
     calc_md.__doc__ = LammpsControl.calc_md.__doc__
 
@@ -710,6 +740,7 @@ class LammpsBase(AtomisticGenericJob):
             window_moves (int): The number of times the sampling window is moved during one MC cycle. (Default is None,
                 number of moves is determined automatically.)
         """
+        rotation_matrix = self._get_rotation_matrix(pressure=pressure)
         if mu is None:
             mu = {}
             for el in self.input.potential.get_element_lst():
@@ -741,6 +772,7 @@ class LammpsBase(AtomisticGenericJob):
             initial_temperature=initial_temperature,
             langevin=langevin,
             job_name=self.job_name,
+            rotation_matrix=rotation_matrix
         )
 
     # define hdf5 input and output
@@ -828,7 +860,7 @@ class LammpsBase(AtomisticGenericJob):
         with open(file_name, "r") as ff:
             dump = ff.readlines()
 
-        time = np.genfromtxt(
+        steps = np.genfromtxt(
             [
                 dump[nn]
                 for nn in np.where([ll.startswith("ITEM: TIMESTEP") for ll in dump])[0]
@@ -836,8 +868,8 @@ class LammpsBase(AtomisticGenericJob):
             ],
             dtype=int,
         )
-        time = np.array([time]).flatten()
-        output["time"] = time
+        steps = np.array([steps]).flatten()
+        output["steps"] = steps
 
         natoms = np.genfromtxt(
             [
@@ -952,12 +984,11 @@ class LammpsBase(AtomisticGenericJob):
         print("This function is outdated use the potential setter instead!")
         self.potential = file_name
 
-    def next(self, snapshot=-1, job_name=None, job_type=None):
+    def next(self, job_name=None, job_type=None):
         """
         Restart a new job created from an existing Lammps calculation.
         Args:
             project (pyiron.project.Project instance): Project instance at which the new job should be created
-            snapshot (int): Snapshot of the calculations which would be the initial structure of the new job
             job_name (str): Job name
             job_type (str): Job type. If not specified a Lammps job type is assumed
 
@@ -965,15 +996,14 @@ class LammpsBase(AtomisticGenericJob):
             new_ham (lammps.lammps.Lammps instance): New job
         """
         return super(LammpsBase, self).restart(
-            snapshot=snapshot, job_name=job_name, job_type=job_type
+            job_name=job_name, job_type=job_type
         )
 
-    def restart(self, snapshot=-1, job_name=None, job_type=None):
+    def restart(self, job_name=None, job_type=None):
         """
         Restart a new job created from an existing Lammps calculation.
         Args:
             project (pyiron.project.Project instance): Project instance at which the new job should be created
-            snapshot (int): Snapshot of the calculations which would be the initial structure of the new job
             job_name (str): Job name
             job_type (str): Job type. If not specified a Lammps job type is assumed
 
@@ -981,7 +1011,7 @@ class LammpsBase(AtomisticGenericJob):
             new_ham (lammps.lammps.Lammps instance): New job
         """
         new_ham = super(LammpsBase, self).restart(
-            snapshot=snapshot, job_name=job_name, job_type=job_type
+            job_name=job_name, job_type=job_type
         )
         if new_ham.__name__ == self.__name__:
             new_ham.potential = self.potential
@@ -1014,7 +1044,7 @@ class LammpsBase(AtomisticGenericJob):
             """
             prism = UnfoldingPrism(structure.cell)
             lammps_structure = structure.copy()
-            lammps_structure.cell = prism.A
+            lammps_structure.set_cell(prism.A)
             lammps_structure.positions = np.matmul(structure.positions, prism.R)
             return lammps_structure
 
@@ -1138,7 +1168,8 @@ class LammpsBase(AtomisticGenericJob):
                             "velocity___constraintz"
                         ] = "set NULL NULL 0.0"
 
-    def _ensure_requested_cell_deformation_allowed(self, pressure):
+    @staticmethod
+    def _modify_structure_to_allow_requested_deformation(structure, pressure, prism=None):
         """
         Lammps will not allow xy/xz/yz cell deformations in minimization or MD for non-triclinic cells. In case the
         requested pressure for a calculation has these non-diagonal entries, we need to make sure it will run. One way
@@ -1152,18 +1183,48 @@ class LammpsBase(AtomisticGenericJob):
         if hasattr(pressure, '__len__'):
             non_diagonal_pressures = np.any([p is not None for p in pressure[3:]])
 
+            if prism is None:
+                prism = UnfoldingPrism(structure.cell)
+
             if non_diagonal_pressures:
                 try:
-                    if not self._prism.is_skewed():
-                        skew_structure = self.structure.copy()
-                        skew_structure.cell[0, 1] += 2 * self._prism.acc
-                        self.structure = skew_structure
+                    if not prism.is_skewed():
+                        skew_structure = structure.copy()
+                        skew_structure.cell[0, 1] += 2 * prism.acc
+                        return skew_structure
                 except AttributeError:
                     warnings.warn(
                         "WARNING: Setting a calculation type which uses pressure before setting the structure risks " +
                         "constraining your cell shape evolution if non-diagonal pressures are used but the structure " +
                         "is not triclinic from the start of the calculation."
                     )
+        return structure
+
+    def _get_rotation_matrix(self, pressure):
+        """
+
+        Args:
+            pressure:
+
+        Returns:
+
+        """
+        if self.structure is not None:
+            if self._prism is None:
+                self._prism = UnfoldingPrism(self.structure.cell)
+
+            self.structure = self._modify_structure_to_allow_requested_deformation(
+                pressure=pressure,
+                structure=self.structure,
+                prism=self._prism
+            )
+            rotation_matrix = self._prism.R
+        else:
+            warnings.warn(
+                "No structure set, can not validate the simulation cell!"
+            )
+            rotation_matrix = None
+        return rotation_matrix
 
 
 class Input:

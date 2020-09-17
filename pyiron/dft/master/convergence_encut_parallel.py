@@ -4,7 +4,7 @@
 
 from __future__ import print_function
 from pyiron.atomistics.master.parallel import AtomisticParallelMaster
-from pyiron.base.master.parallel import JobGenerator
+from pyiron_base import JobGenerator
 import numpy as np
 
 try:
@@ -17,7 +17,7 @@ except (ImportError, RuntimeError):
 
 __author__ = "Jan Janssen"
 __copyright__ = (
-    "Copyright 2019, Max-Planck-Institut für Eisenforschung GmbH - "
+    "Copyright 2020, Max-Planck-Institut für Eisenforschung GmbH - "
     "Computational Materials Design (CM) Department"
 )
 __version__ = "1.0"

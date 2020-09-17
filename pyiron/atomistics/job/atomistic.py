@@ -9,9 +9,7 @@ import numpy as np
 import warnings
 
 from pyiron.atomistics.structure.atoms import Atoms
-from pyiron.base.generic.parameters import GenericParameters
-from pyiron.base.job.generic import GenericJob as GenericJobCore
-from pyiron.base.master.generic import GenericMaster
+from pyiron_base import GenericParameters, GenericMaster, GenericJob as GenericJobCore
 
 try:
     from pyiron.base.project import ProjectGUI
@@ -20,7 +18,7 @@ except (ImportError, TypeError, AttributeError):
 
 __author__ = "Jan Janssen"
 __copyright__ = (
-    "Copyright 2019, Max-Planck-Institut für Eisenforschung GmbH - "
+    "Copyright 2020, Max-Planck-Institut für Eisenforschung GmbH - "
     "Computational Materials Design (CM) Department"
 )
 __version__ = "1.0"
@@ -185,20 +183,30 @@ class AtomisticGenericJob(GenericJobCore):
         return new_generic_job
 
     def calc_minimize(
-        self, e_tol=0, f_tol=1e-4, max_iter=1000, pressure=None, n_print=1
+        self, ionic_energy_tolerance=0, ionic_force_tolerance=1e-4, e_tol=None, f_tol=None, max_iter=1000, pressure=None, n_print=1
     ):
         """
 
         Args:
-            e_tol:
-            f_tol:
-            max_iter:
-            pressure:
-            n_print:
+            ionic_energy_tolerance (float): Maximum energy difference between 2 steps
+            ionic_force_tolerance (float): Maximum force magnitude that each of atoms is allowed to have
+            e_tol (float): same as ionic_energy_tolerance (deprecated)
+            f_tol (float): same as ionic_force_tolerance (deprecated)
+            max_iter (int): Maximum number of force evluations
+            pressure (float/list): Targetpressure values
+            n_print (int): Print period
 
         Returns:
 
         """
+        if e_tol is not None:
+            warnings.warn(
+                "e_tol is deprecated as of vers. 0.3.0. It is not guaranteed to be in service in vers. 0.4.0"
+            )
+        if f_tol is not None:
+            warnings.warn(
+                "f_tol is deprecated as of vers. 0.3.0. It is not guaranteed to be in service in vers. 0.4.0"
+            )
         self._generic_input["calc_mode"] = "minimize"
         self._generic_input["max_iter"] = max_iter
         self._generic_input["pressure"] = pressure
@@ -272,9 +280,12 @@ class AtomisticGenericJob(GenericJobCore):
 
     def store_structure(self):
         """
+        Create :class:`~.StructureContainer` job with the initial structure of
+        the job and sets that jobs :attr:`~.parent_id` from this job.
 
         Returns:
-
+            :class:`~.StructureContainer`: job containing initial structure of
+            this job
         """
         if self.structure is not None:
             structure_container = self.create_job(
@@ -283,6 +294,7 @@ class AtomisticGenericJob(GenericJobCore):
             )
             structure_container.structure = self.structure
             self.parent_id = structure_container.job_id
+            return structure_container
         else:
             ValueError("There is no structure attached to the current Job.")
 
@@ -382,12 +394,11 @@ class AtomisticGenericJob(GenericJobCore):
             db_dict["ChemicalFormula"] = parent_structure.get_chemical_formula()
         return db_dict
 
-    def restart(self, snapshot=-1, job_name=None, job_type=None):
+    def restart(self, job_name=None, job_type=None):
         """
         Restart a new job created from an existing calculation.
         Args:
             project (pyiron.project.Project instance): Project instance at which the new job should be created
-            snapshot (int): Snapshot of the calculations which would be the initial structure of the new job
             job_name (str): Job name
             job_type (str): Job type
 
@@ -395,12 +406,12 @@ class AtomisticGenericJob(GenericJobCore):
             new_ham: New job
         """
         new_ham = super(AtomisticGenericJob, self).restart(
-            snapshot=snapshot, job_name=job_name, job_type=job_type
+            job_name=job_name, job_type=job_type
         )
         if isinstance(new_ham, GenericMaster) and not isinstance(self, GenericMaster):
-            new_child = self.restart(snapshot=snapshot, job_name=None, job_type=None)
+            new_child = self.restart(job_name=None, job_type=None)
             new_ham.append(new_child)
-        new_ham.structure = self.get_structure(iteration_step=snapshot)
+        new_ham.structure = self.get_structure(iteration_step=-1)
         if new_ham.structure is None:
             new_ham.structure = self.structure.copy()
         new_ham._generic_input['structure'] = 'atoms'
@@ -603,52 +614,6 @@ class AtomisticGenericJob(GenericJobCore):
         )
         return self.get_structure(iteration_step=-1)
 
-    def set_kpoints(
-        self,
-        mesh=None,
-        scheme="MP",
-        center_shift=None,
-        symmetry_reduction=True,
-        manual_kpoints=None,
-        weights=None,
-        reciprocal=True,
-    ):
-        """
-
-        Args:
-            mesh:
-            scheme:
-            center_shift:
-            symmetry_reduction:
-            manual_kpoints:
-            weights:
-            reciprocal:
-
-        Returns:
-
-        """
-        raise NotImplementedError(
-            "The set_kpoints function is not implemented for this code."
-        )
-
-    def set_encut(self, encut):
-        """
-
-        Args:
-            encut:
-
-        Returns:
-
-        """
-        raise NotImplementedError(
-            "The set_encut function is not implemented for this code."
-        )
-
-    def get_encut(self):
-        raise NotImplementedError(
-            "The set_encut function is not implemented for this code."
-        )
-
     def get_structure(self, iteration_step=-1, wrap_atoms=True):
         """
         Gets the structure from a given iteration step of the simulation (MD/ionic relaxation). For static calculations
@@ -669,12 +634,14 @@ class AtomisticGenericJob(GenericJobCore):
                 conditions.append(True)
             else:
                 conditions.append(self.output.cells[0] is None)
-        conditions.append(self.output.cells is None)
+        if self.output.positions is not None and self.output.cells is None:
+            conditions.append(self.output.cells is None)
         if any(conditions):
             snapshot.cell = None
-        else:
+        elif self.output.cells is not None:
             snapshot.cell = self.output.cells[iteration_step]
-        snapshot.positions = self.output.positions[iteration_step]
+        if self.output.positions is not None:
+            snapshot.positions = self.output.positions[iteration_step]
         indices = self.output.indices
         if indices is not None and len(indices) > max([iteration_step, 0]):
             snapshot.indices = indices[iteration_step]
@@ -730,16 +697,6 @@ class AtomisticGenericJob(GenericJobCore):
             ham.to_hdf()
 
 
-def set_encut(job, parameter):
-    job.set_encut(parameter)
-    return job
-
-
-def set_kpoints(job, parameter):
-    job.set_kpoints(parameter)
-    return job
-
-
 def set_structure(job, parameter):
     job.structure = parameter
     return job
@@ -748,8 +705,6 @@ def set_structure(job, parameter):
 class MapFunctions(object):
     def __init__(self):
         self.set_structure = set_structure
-        self.set_encut = set_encut
-        self.set_kpoints = set_kpoints
 
 
 class Trajectory(object):
@@ -835,6 +790,14 @@ class GenericOutput(object):
         return self._job["output/generic/forces"]
 
     @property
+    def force_max(self):
+        """
+            maximum force magnitude of each step which is used for
+            convergence criterion of structure optimizations
+        """
+        return np.linalg.norm(self.forces, axis=-1).max(axis=-1)
+
+    @property
     def positions(self):
         return self._job["output/generic/positions"]
 
@@ -877,18 +840,49 @@ class GenericOutput(object):
         For the total displacements from the initial configuration, use total_displacements
         This algorithm collapses if:
         - the ID's are not consistent (i.e. you can also not change the number of atoms)
-        - there are atoms which move by more than half a box length in any direction within two snapshots (due to periodic boundary conditions)
+        - there are atoms which move by more than half a box length in any direction within two snapshots (due to
+        periodic boundary conditions)
         """
-        displacement = np.tensordot(
-            self.positions, np.linalg.inv(self._job.structure.cell), axes=([2, 0])
-        )
-        displacement -= np.append(
-            self._job.structure.get_scaled_positions(), displacement
-        ).reshape(len(self.positions) + 1, len(self._job.structure), 3)[:-1]
-        displacement -= np.rint(displacement)
-        displacement = np.tensordot(
-            displacement, self._job.structure.cell, axes=([2, 0])
-        )
+        # Check if the volume changes in any snapshot
+        vol = np.linalg.det(self.cells)
+        varying_cell = np.sqrt(np.average((vol - vol[0])**2)) > 1e-5
+        return self.get_displacements(self._job.structure, self.positions, self.cells, varying_cell=varying_cell)
+
+    @staticmethod
+    def get_displacements(structure, positions, cells, varying_cell=False):
+        """
+        Output for 3-d displacements between successive snapshots, with minimum image convention.
+        For the total displacements from the initial configuration, use total_displacements
+        This algorithm collapses if:
+        - the ID's are not consistent (i.e. you can also not change the number of atoms)
+        - there are atoms which move by more than half a box length in any direction within two snapshots (due to
+        periodic boundary conditions)
+
+        Args:
+            structure (pyiron.atomistics.structure.atoms.Atoms): The initial structure
+            positions (numpy.ndarray/list): List of positions in cartesian coordinates (N_steps x N_atoms x 3)
+            cells (numpy.ndarray/list): List of cells (N_steps x 3 x 3)
+            varying_cell (bool): True if the cell shape varies during the trajectory (raises a warning)
+
+        Returns:
+            numpy.ndarray: Displacements (N_steps x N_atoms x 3)
+
+        """
+        if not varying_cell:
+            displacement = np.tensordot(positions, np.linalg.inv(cells[-1]), axes=([2, 0]))
+            displacement -= np.append(structure.get_scaled_positions(),
+                                      displacement).reshape(len(positions) + 1, len(structure), 3)[:-1]
+            displacement -= np.rint(displacement)
+            displacement = np.tensordot(displacement, cells[-1], axes=([2, 0]))
+        else:
+            warnings.warn("You are computing displacements in a simulation with periodic boundary conditions \n"
+                          "and a varying cell shape.")
+            displacement = np.array(
+                [np.tensordot(pos, np.linalg.inv(cell), axes=([1, 1])) for pos, cell in zip(positions, cells)])
+            displacement -= np.append(structure.get_scaled_positions(),
+                                      displacement).reshape(len(positions) + 1, len(structure), 3)[:-1]
+            displacement -= np.rint(displacement)
+            displacement = np.einsum('nki,nji->nkj', displacement, cells)
         return displacement
 
     @property

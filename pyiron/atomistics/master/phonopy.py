@@ -16,12 +16,11 @@ from phonopy.file_IO import write_FORCE_CONSTANTS
 from pyiron.atomistics.structure.atoms import Atoms
 from pyiron.atomistics.master.parallel import AtomisticParallelMaster
 from pyiron.atomistics.structure.phonopy import publication as phonopy_publication
-from pyiron.base.master.parallel import JobGenerator
-from pyiron.base.settings.generic import Settings
+from pyiron_base import JobGenerator, Settings
 
 __author__ = "Jan Janssen, Yury Lysogorskiy"
 __copyright__ = (
-    "Copyright 2019, Max-Planck-Institut für Eisenforschung GmbH - "
+    "Copyright 2020, Max-Planck-Institut für Eisenforschung GmbH - "
     "Computational Materials Design (CM) Department"
 )
 __version__ = "1.0"
@@ -64,7 +63,7 @@ def phonopy_to_atoms(ph_atoms):
     return Atoms(
         symbols=list(ph_atoms.get_chemical_symbols()),
         positions=list(ph_atoms.get_positions()),
-        cell=list(ph_atoms.get_cell()),
+        cell=list(ph_atoms.get_cell()), pbc=True
     )
 
 
@@ -238,28 +237,29 @@ class PhonopyJob(AtomisticParallelMaster):
         Returns:
 
         """
-        if self.server.run_mode.interactive:
+        if self.ref_job.server.run_mode.interactive:
             forces_lst = self.project_hdf5.inspect(self.child_ids[0])[
                 "output/generic/forces"
             ]
         else:
+            pr_job = self.project_hdf5.project.open(self.job_name + "_hdf5")
             forces_lst = [
-                self.project_hdf5.inspect(job_id)["output/generic/forces"][-1]
-                for job_id in self._get_jobs_sorted()
+                pr_job.inspect(job_name)["output/generic/forces"][-1]
+                for job_name in self._get_jobs_sorted()
             ]
         self.phonopy.set_forces(forces_lst)
         self.phonopy.produce_force_constants()
-        self.phonopy.set_mesh(mesh=[self.input["dos_mesh"]] * 3)
-        qpoints, weights, frequencies, eigvecs = self.phonopy.get_mesh()
-        self.phonopy.set_total_DOS()
-        erg, dos = self.phonopy.get_total_DOS()
+        self.phonopy.run_mesh(mesh=[self.input["dos_mesh"]] * 3)
+        mesh_dict = self.phonopy.get_mesh_dict()
+        self.phonopy.run_total_dos()
+        dos_dict = self.phonopy.get_total_dos_dict()
 
         self.to_hdf()
 
         with self.project_hdf5.open("output") as hdf5_out:
-            hdf5_out["dos_total"] = dos
-            hdf5_out["dos_energies"] = erg
-            hdf5_out["qpoints"] = qpoints
+            hdf5_out["dos_total"] = dos_dict['total_dos']
+            hdf5_out["dos_energies"] = dos_dict['frequency_points']
+            hdf5_out["qpoints"] = mesh_dict['qpoints']
             hdf5_out["supercell_matrix"] = self._phonopy_supercell_matrix()
             hdf5_out["displacement_dataset"] = self.phonopy.get_displacement_dataset()
             hdf5_out[
@@ -315,10 +315,14 @@ class PhonopyJob(AtomisticParallelMaster):
         Returns:
 
         """
-        self.phonopy.set_thermal_properties(
+        self.phonopy.run_thermal_properties(
             t_step=t_step, t_max=t_max, t_min=t_min, temperatures=temperatures
         )
-        return thermal(*self.phonopy.get_thermal_properties())
+        tp_dict = self.phonopy.get_thermal_properties_dict()
+        return thermal(tp_dict['temperatures'],
+                       tp_dict['free_energy'],
+                       tp_dict['entropy'],
+                       tp_dict['heat_capacity'])
 
     @property
     def dos_total(self):

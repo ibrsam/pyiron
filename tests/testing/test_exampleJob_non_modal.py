@@ -5,7 +5,7 @@
 import unittest
 import numpy as np
 import os
-from pyiron.base.project.generic import Project
+from pyiron_base import Project
 
 
 class TestExampleJob(unittest.TestCase):
@@ -16,7 +16,7 @@ class TestExampleJob(unittest.TestCase):
         cls.project = Project(
             os.path.join(cls.file_location, "random_testing_non_modal")
         )
-        cls.project.remove_jobs(recursive=True)
+        cls.project.remove_jobs_silently(recursive=True)
         cls.project.set_logging_level("INFO")
 
     @classmethod
@@ -24,7 +24,7 @@ class TestExampleJob(unittest.TestCase):
         # print('tear down')
         file_location = os.path.dirname(os.path.abspath(__file__))
         project = Project(os.path.join(file_location, "random_testing_non_modal"))
-        project.remove_jobs()
+        project.remove_jobs_silently()
         project.remove(enable=True)
 
     def test_non_modal_run(self):

@@ -4,11 +4,11 @@
 
 from __future__ import print_function
 import importlib
-from pyiron.base.settings.generic import Settings
+from pyiron_base import Settings
 
 __author__ = "Joerg Neugebauer, Jan Janssen"
 __copyright__ = (
-    "Copyright 2019, Max-Planck-Institut für Eisenforschung GmbH - "
+    "Copyright 2020, Max-Planck-Institut für Eisenforschung GmbH - "
     "Computational Materials Design (CM) Department"
 )
 __version__ = "1.0"

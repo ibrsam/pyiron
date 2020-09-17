@@ -5,11 +5,11 @@
 import numpy as np
 from phonopy.structure.atoms import PhonopyAtoms
 import spglib as spg
-from pyiron.base.settings.generic import Settings
+from pyiron_base import Settings
 
 __author__ = "Osamu Waseda"
 __copyright__ = (
-    "Copyright 2019, Max-Planck-Institut für Eisenforschung GmbH - "
+    "Copyright 2020, Max-Planck-Institut für Eisenforschung GmbH - "
     "Computational Materials Design (CM) Department"
 )
 __version__ = "1.0"

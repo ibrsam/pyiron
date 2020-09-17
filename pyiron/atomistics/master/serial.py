@@ -4,12 +4,12 @@
 
 from __future__ import print_function
 from collections import OrderedDict
-from pyiron.base.master.serial import SerialMasterBase
+from pyiron_base import SerialMasterBase
 from pyiron.atomistics.job.atomistic import AtomisticGenericJob
 
 __author__ = "Jan Janssen"
 __copyright__ = (
-    "Copyright 2019, Max-Planck-Institut für Eisenforschung GmbH - "
+    "Copyright 2020, Max-Planck-Institut für Eisenforschung GmbH - "
     "Computational Materials Design (CM) Department"
 )
 __version__ = "1.0"

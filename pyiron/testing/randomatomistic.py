@@ -4,11 +4,8 @@
 
 from __future__ import print_function
 import numpy as np
-import os
 import posixpath
-from pyiron.base.generic.parameters import GenericParameters
-from pyiron.base.job.generic import GenericJob
-from pyiron.base.pyio.parser import Logstatus
+from pyiron_base import GenericParameters, GenericJob, Logstatus
 from pyiron.atomistics.job.interactive import GenericInteractive
 
 """
@@ -17,7 +14,7 @@ Example Job class for testing the pyiron classes
 
 __author__ = "Joerg Neugebauer, Jan Janssen"
 __copyright__ = (
-    "Copyright 2019, Max-Planck-Institut für Eisenforschung GmbH - "
+    "Copyright 2020, Max-Planck-Institut für Eisenforschung GmbH - "
     "Computational Materials Design (CM) Department"
 )
 __version__ = "1.0"

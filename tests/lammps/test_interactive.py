@@ -5,9 +5,8 @@
 import unittest
 import numpy as np
 import os
-from pyiron.base.project.generic import Project
+from pyiron_base import Project, ProjectHDFio
 from pyiron.atomistics.structure.atoms import Atoms
-from pyiron.base.generic.hdfio import ProjectHDFio
 from pyiron.lammps.lammps import Lammps
 
 
@@ -60,7 +59,7 @@ class TestLammpsInteractive(unittest.TestCase):
     def tearDownClass(cls):
         cls.execution_path = os.path.dirname(os.path.abspath(__file__))
         project = Project(os.path.join(cls.execution_path, "lammps"))
-        project.remove_jobs(recursive=True)
+        project.remove_jobs_silently(recursive=True)
         project.remove(enable=True)
 
     def test_interactive_cells_setter(self):

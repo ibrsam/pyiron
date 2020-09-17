@@ -5,7 +5,7 @@
 import os
 import unittest
 from pyiron.atomistics.structure.atoms import CrystalStructure
-from pyiron.base.project.generic import Project
+from pyiron_base import Project
 
 
 def convergence_goal(self, **qwargs):
@@ -33,7 +33,7 @@ class TestMurnaghan(unittest.TestCase):
         cls.basis = CrystalStructure(
             element="Fe", bravais_basis="fcc", lattice_constant=3.5
         )
-        cls.project.remove_jobs(recursive=True)
+        cls.project.remove_jobs_silently(recursive=True)
 
     @classmethod
     def tearDownClass(cls):

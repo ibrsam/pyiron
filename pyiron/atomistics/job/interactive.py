@@ -3,7 +3,7 @@
 # Distributed under the terms of "New BSD License", see the LICENSE file.
 
 import numpy as np
-from pyiron.base.job.interactive import InteractiveBase
+from pyiron_base import Settings, InteractiveBase
 from pyiron.atomistics.structure.atoms import Atoms
 from pyiron.atomistics.structure.periodic_table import PeriodicTable
 from pyiron.atomistics.job.atomistic import AtomisticGenericJob, GenericOutput
@@ -11,7 +11,7 @@ from collections import defaultdict
 
 __author__ = "Osamu Waseda, Jan Janssen"
 __copyright__ = (
-    "Copyright 2019, Max-Planck-Institut für Eisenforschung GmbH - "
+    "Copyright 2020, Max-Planck-Institut für Eisenforschung GmbH - "
     "Computational Materials Design (CM) Department"
 )
 __version__ = "1.0"
@@ -19,6 +19,8 @@ __maintainer__ = "Jan Janssen"
 __email__ = "janssen@mpie.de"
 __status__ = "development"
 __date__ = "Sep 1, 2017"
+
+s = Settings()
 
 
 class GenericInteractive(AtomisticGenericJob, InteractiveBase):
@@ -280,10 +282,10 @@ class GenericInteractive(AtomisticGenericJob, InteractiveBase):
             or self.server.run_mode.interactive_non_modal
         ):
             # Warning: We only copy symbols, positions and cell information - no tags.
-            if len(self.output.indices) != 0:
+            if self.output.indices is not None and len(self.output.indices) != 0:
                 indices = self.output.indices[iteration_step]
             else:
-                indices = self.get("output/generic/indices")
+                return None
             if len(self._interactive_species_lst) == 0:
                 el_lst = [el.Abbreviation for el in self.structure.species]
             else:
@@ -303,6 +305,7 @@ class GenericInteractive(AtomisticGenericJob, InteractiveBase):
                     symbols=np.array([el_lst[el] for el in indices]),
                     positions=positions,
                     cell=self.output.cells[iteration_step],
+                    pbc=self.structure.pbc,
                 )
                 # Update indicies to match the indicies in the cache.
                 atoms.set_species([self._periodic_table.element(el) for el in el_lst])
@@ -570,6 +573,9 @@ class GenericInteractiveOutput(GenericOutput):
 
 
 class InteractiveInterface(object):
+    def __init__(self):
+        self._logger = s.logger
+
     def get_cell(self):
         raise NotImplementedError
 

@@ -11,11 +11,11 @@ import scipy.constants
 import warnings
 from pyiron.atomistics.structure.atoms import Atoms, ase_to_pyiron
 from pyiron.atomistics.master.parallel import AtomisticParallelMaster
-from pyiron.base.master.parallel import JobGenerator
+from pyiron_base import JobGenerator
 
 __author__ = "Joerg Neugebauer, Jan Janssen"
 __copyright__ = (
-    "Copyright 2019, Max-Planck-Institut für Eisenforschung GmbH - "
+    "Copyright 2020, Max-Planck-Institut für Eisenforschung GmbH - "
     "Computational Materials Design (CM) Department"
 )
 __version__ = "1.0"
@@ -714,7 +714,7 @@ class Murnaghan(AtomisticParallelMaster):
             return []
 
     def collect_output(self):
-        if self.server.run_mode.interactive:
+        if self.ref_job.server.run_mode.interactive:
             ham = self.project_hdf5.inspect(self.child_ids[0])
             erg_lst = ham["output/generic/energy_tot"]
             vol_lst = ham["output/generic/volume"]

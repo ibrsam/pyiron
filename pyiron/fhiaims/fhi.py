@@ -12,8 +12,6 @@ from pyiron_base import GenericParameters
 from pyiron_base import Settings
 from pyiron.dft.job.generic import GenericDFTJob
 
-
-
 __author__ = "Yury Lysogorskiy"
 __copyright__ = "Copyright 2020, ICAMS-RUB "
 __version__ = "1.0"
@@ -32,7 +30,8 @@ DEFAULT_IONIC_STEPS = 1000
 
 s = Settings()
 
-#from pyiron.dft.job.generic import get_k_mesh_by_density
+
+# from pyiron.dft.job.generic import get_k_mesh_by_density
 
 def get_k_mesh_by_density(cell, kmesh_density_per_inverse_angstrom=1.0):
     """
@@ -52,6 +51,7 @@ def get_k_mesh_by_density(cell, kmesh_density_per_inverse_angstrom=1.0):
     )
     kmesh[kmesh < 1] = 1
     return [int(k) for k in kmesh]
+
 
 def job_input_to_dict(inp):
     dct = inp.get_pandas()[["Parameter", "Value"]].set_index("Parameter")["Value"].to_dict()
@@ -189,16 +189,16 @@ class FHIAims(GenericDFTJob):
                 is_pbc = np.all(self.structure.pbc)
                 if is_pbc:
                     self.input.update_kmesh(self.structure)
-                    mesh = self.get_k_mesh_by_density(
-                        kmesh_density_per_inverse_angstrom=kmesh_density_per_inverse_angstrom)
+                    mesh = get_k_mesh_by_density(self.structure.cell,
+                                                 kmesh_density_per_inverse_angstrom=kmesh_density_per_inverse_angstrom)
                 else:
                     mesh = None
         else:
             if mesh is None:
                 if self.input.kmesh_density_per_inverse_angstrom is not None:
-                    mesh = self.get_k_mesh_by_density(kmesh_density_per_inverse_angstrom=self.input.kmesh_density_per_inverse_angstrom)
+                    mesh = get_k_mesh_by_density(self.structure.cell,
+                                                 kmesh_density_per_inverse_angstrom=self.input.kmesh_density_per_inverse_angstrom)
             self.input.set_kmesh_density(kmesh_density_per_inverse_angstrom)
-
 
         if kpoints_per_angstrom is not None:
             if mesh is not None:
@@ -332,7 +332,7 @@ class FHIAims(GenericDFTJob):
 
     def collect_output(self):
         output_dict, output_dft_dict, meta_info_dict = collect_output(working_directory=self.working_directory,
-                                                     FHI_output_file='FHI.out')
+                                                                      FHI_output_file='FHI.out')
 
         with self.project_hdf5.open("output") as hdf5_output:
             with hdf5_output.open("generic") as hdf5_generic:

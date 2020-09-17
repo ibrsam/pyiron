@@ -8,9 +8,11 @@ import warnings
 
 import numpy as np
 from pyiron.atomistics.structure.atoms import Atoms
-from pyiron.base.generic.parameters import GenericParameters
-from pyiron.base.settings.generic import Settings
-from pyiron.dft.job.generic import GenericDFTJob, get_k_mesh_by_density
+from pyiron_base import GenericParameters
+from pyiron_base import Settings
+from pyiron.dft.job.generic import GenericDFTJob
+
+
 
 __author__ = "Yury Lysogorskiy"
 __copyright__ = "Copyright 2020, ICAMS-RUB "
@@ -30,6 +32,26 @@ DEFAULT_IONIC_STEPS = 1000
 
 s = Settings()
 
+#from pyiron.dft.job.generic import get_k_mesh_by_density
+
+def get_k_mesh_by_density(cell, kmesh_density_per_inverse_angstrom=1.0):
+    """
+    Args:
+        cell:
+        kmesh_density_per_inverse_angstrom:
+    Returns:
+    """
+    omega = np.linalg.det(cell)
+    l1, l2, l3 = cell
+    g1 = 2 * np.pi / omega * np.cross(l2, l3)
+    g2 = 2 * np.pi / omega * np.cross(l3, l1)
+    g3 = 2 * np.pi / omega * np.cross(l1, l2)
+
+    kmesh = np.rint(
+        np.array([np.linalg.norm(g) for g in [g1, g2, g3]]) / kmesh_density_per_inverse_angstrom
+    )
+    kmesh[kmesh < 1] = 1
+    return [int(k) for k in kmesh]
 
 def job_input_to_dict(inp):
     dct = inp.get_pandas()[["Parameter", "Value"]].set_index("Parameter")["Value"].to_dict()

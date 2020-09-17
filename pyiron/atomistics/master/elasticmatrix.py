@@ -11,7 +11,7 @@ import numpy as np
 import spglib
 
 from pyiron.atomistics.master.parallel import AtomisticParallelMaster
-from pyiron.base.master.parallel import JobGenerator
+from pyiron_base import JobGenerator
 
 __author__ = "Yury Lysogorskiy"
 __copyright__ = "Copyright 2020, ICAMS, RUB"

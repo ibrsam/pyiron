@@ -41,6 +41,9 @@ JOB_CLASS_DICT["VaspMetadyn"] = "pyiron.vasp.metadyn"
 JOB_CLASS_DICT["VaspSol"] = "pyiron.vasp.vaspsol"
 JOB_CLASS_DICT["Yaff"] = "pyiron.yaff.yaff"
 
+JOB_CLASS_DICT["ElasticMatrix"] ="pyiron.atomistics.master.elasticmatrix"
+JOB_CLASS_DICT["FHIAims"] = "pyiron.fhiaims.fhi"
+
 from ._version import get_versions
 
 __version__ = get_versions()["version"]

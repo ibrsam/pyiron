@@ -43,6 +43,7 @@ JOB_CLASS_DICT["Yaff"] = "pyiron.yaff.yaff"
 
 JOB_CLASS_DICT["ElasticMatrix"] ="pyiron.atomistics.master.elasticmatrix"
 JOB_CLASS_DICT["FHIAims"] = "pyiron.fhiaims.fhi"
+JOB_CLASS_DICT["TransformationPath"] = "pyiron.atomistics.master.transformationpath"
 
 from ._version import get_versions
 

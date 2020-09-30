@@ -44,8 +44,6 @@ class TransformationPathGenerator(JobGenerator):
 
         self._data = OrderedDict()
         self._structure_dict = OrderedDict()
-        if self._job.ref_job is not None:
-            self.prepare_ref_job()
 
     def prepare_ref_job(self):
         self.basis_ref = self._job.ref_job.structure.copy()

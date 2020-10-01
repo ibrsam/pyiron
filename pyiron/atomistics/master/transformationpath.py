@@ -41,7 +41,7 @@ class TransformationPathGenerator(JobGenerator):
 
     def __init__(self, job, no_job_checks=False):
         super().__init__(job, no_job_checks)
-
+        self._ref_job_prepared = False
         self._data = OrderedDict()
         self._structure_dict = OrderedDict()
 
@@ -62,6 +62,7 @@ class TransformationPathGenerator(JobGenerator):
         self.element = elem
         self.a0 = a0
         self.num_of_point = self._job.input["num_points"]
+        self._ref_job_prepared=True
 
     def deformation_path(self):
         # TODO: ensure that high-symmetry points are also within the list
@@ -198,7 +199,8 @@ class TransformationPathGenerator(JobGenerator):
 
     @property
     def parameter_list(self):
-        self.prepare_ref_job()
+        if not self._ref_job_prepared:
+            self.prepare_ref_job()
         path_ind, structures = self.generate_path()
         self.indices = path_ind
         self._data["transformation_coordinates"] = self.indices
@@ -215,7 +217,10 @@ class TransformationPathGenerator(JobGenerator):
         return job
 
     def analyse_structures(self, output_dict):
+        if not self._ref_job_prepared:
+            self.prepare_ref_job()
         path_ind = self.generate_path(indices_only=True)
+        self.indices = path_ind
         energies_0 = []
         for p in path_ind:
             job_name = self.job_name((p,))

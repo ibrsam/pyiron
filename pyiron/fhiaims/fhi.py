@@ -8,9 +8,8 @@ import warnings
 
 import numpy as np
 from pyiron.atomistics.structure.atoms import Atoms
-from pyiron_base import GenericParameters
-from pyiron_base import Settings
 from pyiron.dft.job.generic import GenericDFTJob
+from pyiron_base import GenericParameters, Settings
 
 __author__ = "Yury Lysogorskiy"
 __copyright__ = "Copyright 2020, ICAMS-RUB "
@@ -431,10 +430,12 @@ sc_accuracy_eev  1E-3
 sc_accuracy_etot 1E-7
 relativistic       atomic_zora scalar
 compute_forces .true.
-clean_forces sayvetz
+clean_forces none
+final_forces_cleaned .false.
 sc_accuracy_forces 1E-4
-final_forces_cleaned .true.
 """
+        # clean_forces sayvetz
+        # final_forces_cleaned .true.
         self.load_string(input_str)
 
 
@@ -675,6 +676,7 @@ class EnergyForcesStressesStreamParser:
         self.block_flag = False
         self.force_block_flag = False
         self.stress_block_flag = False
+        self.have_a_nice_day_flag = False
 
         self.stress_line_counter = 0
         self.current_forces = []
@@ -722,6 +724,9 @@ class EnergyForcesStressesStreamParser:
             self.stress_block_flag = False
             self.stress_line_counter = 0
             self.stresses_lst.append(self.current_stresses)
+
+        if "Have a nice day." in line:
+            self.have_a_nice_day_flag = True
 
 
 class MetaInfoStreamParser:
@@ -773,6 +778,9 @@ def collect_output(working_directory="", FHI_output_file="FHI.out"):
 
     if len(efs_stream_parser.free_energies_list) == 0 or len(efs_stream_parser.forces_lst) == 0:
         raise ValueError("No free electronic energies found. Calculation could be broken")
+
+    if not efs_stream_parser.have_a_nice_day_flag:
+        raise ValueError("No 'Have a nice day' line found. Calculation could be broken")
 
     if len(init_geom_stream_parser.lattice_vectors_lst) > 0:
         lattice_vectors_traj = [

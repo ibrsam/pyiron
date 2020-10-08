@@ -735,6 +735,8 @@ class MetaInfoStreamParser:
     FHI_OUT_KEYWORD_TOTAL_TIME = "Total time"
     FHI_OUT_KEYWORD_AIMS_UUID_TAG = "aims_uuid"
     FHI_OUT_KEYWORD_VERSION_TAG = "Version"
+    FHI_OUT_KEYWORD_VERSION_20_TAG = "FHI-aims version"
+
 
     def __init__(self):
         self.version = None
@@ -747,6 +749,8 @@ class MetaInfoStreamParser:
 
         if line.startswith(self.FHI_OUT_KEYWORD_VERSION_TAG):
             self.version = " ".join(line.split()[1:])
+        elif line.startswith(self.FHI_OUT_KEYWORD_VERSION_20_TAG):
+            self.version = " ".join(line.split()[3:])
         elif line.startswith(self.FHI_OUT_KEYWORD_AIMS_UUID_TAG):
             self.aims_uuid = " ".join(line.split(":")[1:]).strip()
 

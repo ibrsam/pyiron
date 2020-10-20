@@ -430,10 +430,10 @@ sc_accuracy_eev  1E-3
 sc_accuracy_etot 1E-7
 relativistic       atomic_zora scalar
 compute_forces .true.
-clean_forces none
-final_forces_cleaned .false.
 sc_accuracy_forces 1E-4
 """
+        # final_forces_cleaned.false.
+        # clean_forces none
         # clean_forces sayvetz
         # final_forces_cleaned .true.
         self.load_string(input_str)

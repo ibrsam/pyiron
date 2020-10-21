@@ -392,7 +392,7 @@ class FHIAims(GenericDFTJob):
 
         self.input.control_input["symmetry_reduced_k_grid"] = ".true."
         self.input.control_input["compute_analytical_stress"] = ".true."
-        self.input.control_input["use_symmetric_forces"] = ".true."
+        #self.input.control_input["use_symmetric_forces"] = ".true."
 
     def set_non_pbc_settings(self):
         # remove kpoints, remove stress

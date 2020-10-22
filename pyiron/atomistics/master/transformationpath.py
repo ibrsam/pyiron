@@ -7,7 +7,7 @@ import numpy as np
 import spglib
 from ase.build import bulk
 from pyiron.atomistics.master.parallel import AtomisticParallelMaster
-from pyiron.atomistics.structure.atoms import Atoms
+from pyiron.atomistics.structure.atoms import Atoms, ase_to_pyiron
 from pyiron_base import JobGenerator
 
 __author__ = "Yury Lysogorskiy"
@@ -62,7 +62,7 @@ def to_cubic_atoms(atoms):
             new_atoms = bulk(elem, "sc", a=a0, cubic=True)
         else:
             return None
-        return new_atoms
+        return ase_to_pyiron(new_atoms)
     else:
         if cell[0, 0] == cell[1, 1] == cell[2, 2] and np.sum(np.abs(np.diag(cell))) == np.sum(np.abs(cell)):
             return atoms
@@ -179,9 +179,9 @@ class TransformationPathGenerator(JobGenerator):
             structures = []
             for p in path_indices:
                 atoms = gen_tetr(a0, base_atoms, p)
-                structures.append(atoms)
+                structures.append(ase_to_pyiron(atoms))
 
-            atoms = gen_tetr(a0, base_atoms, p=1.0)
+            atoms = ase_to_pyiron(gen_tetr(a0, base_atoms, p=1.0))
             self.base_structure = atoms
 
             return path_indices, structures

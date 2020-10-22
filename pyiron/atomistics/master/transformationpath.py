@@ -5,10 +5,10 @@ from collections import OrderedDict
 
 import numpy as np
 import spglib
-
+from ase.build import bulk
 from pyiron.atomistics.master.parallel import AtomisticParallelMaster
+from pyiron.atomistics.structure.atoms import Atoms
 from pyiron_base import JobGenerator
-from pyiron.atomistics.structure.atoms import Atoms, ase_to_pyiron, pyiron_to_ase
 
 __author__ = "Yury Lysogorskiy"
 __copyright__ = "Copyright 2020, ICAMS, RUB"
@@ -23,11 +23,59 @@ def find_symmetry_group_number(struct):
     return SGN
 
 
+spgn_dict = {"fcc": 225, "bcc": 229, "diam": 227, "sc": 221}
+
+
+def is_general_cubic(atoms):
+    # either primitive/cubic fcc, bcc, diamond
+    # or just cubic cell
+    cell = np.array(atoms.get_cell())
+    spgn = spglib.get_symmetry_dataset(atoms)['number']
+    if spgn in [spgn_dict[sg_name] for sg_name in ["fcc", "bcc", "diam", "sc"]]:
+        return True
+    else:
+        if cell[0, 0] == cell[1, 1] == cell[2, 2] and np.sum(np.abs(np.diag(cell))) == np.sum(np.abs(cell)):
+            return True
+        else:
+            return False
+
+
+def to_cubic_atoms(atoms):
+    # either primitive/cubic fcc, bcc, diamond
+    # or just cubic cell
+    cell = np.array(atoms.get_cell())
+    volume_per_atom = np.linalg.det(cell) / len(atoms)
+    elem = atoms.get_chemical_symbols()[0]
+    spgn = spglib.get_symmetry_dataset(atoms)['number']
+    if spgn in [spgn_dict[sg_name] for sg_name in ["fcc", "bcc", "diam", "sc"]]:
+        if spgn == spgn_dict["fcc"]:
+            a0 = (volume_per_atom * 4.) ** (1. / 3.)
+            new_atoms = bulk(elem, "fcc", a=a0, cubic=True)
+        elif spgn == spgn_dict["bcc"]:
+            a0 = (volume_per_atom * 2.) ** (1. / 3.)
+            new_atoms = bulk(elem, "bcc", a=a0, cubic=True)
+        elif spgn == spgn_dict["diam"]:
+            a0 = (volume_per_atom * 8.) ** (1. / 3.)
+            new_atoms = bulk(elem, "diamond", a=a0, cubic=True)
+        elif spgn == spgn_dict["sc"]:
+            a0 = (volume_per_atom * 1.) ** (1. / 3.)
+            new_atoms = bulk(elem, "sc", a=a0, cubic=True)
+        else:
+            return None
+        return new_atoms
+    else:
+        if cell[0, 0] == cell[1, 1] == cell[2, 2] and np.sum(np.abs(np.diag(cell))) == np.sum(np.abs(cell)):
+            return atoms
+        else:
+            return None
+
+
 class TransformationPathGenerator(JobGenerator):
     HEXAGONAL = "hexagonal"
     TRIGONAL = "trigonal"
     ORTHOGONAL = "orthogonal"
     TETRAGONAL = "tetragonal"
+    GENERAL_CUBIC_TETRAGONAL = "general_cubic_tetragonal"
 
     param_names = ["transformation_type", "num_of_point"]
 
@@ -48,9 +96,18 @@ class TransformationPathGenerator(JobGenerator):
     def prepare_ref_job(self):
         self.basis_ref = self._job.ref_job.structure.copy()
         sgn = find_symmetry_group_number(self.basis_ref)
-        if sgn not in [225, 229]:  # 225 - FCC, 229- BCC
-            raise ValueError("Only FCC(sg #225) or BCC (sg #229) structures is acceptable, but you provide "
-                             "structure with space group #{}".format(sgn))
+        transformation_type = self._job.input["transformation_type"]
+        atoms = self.basis_ref
+        if transformation_type in [self.HEXAGONAL, self.TRIGONAL, self.ORTHOGONAL, self.TETRAGONAL] and \
+                sgn not in [225, 229]:  # 225 - FCC, 229- BCC
+            raise ValueError(
+                "Only FCC(sg #225) or BCC (sg #229) structures are acceptable for {} transformation type, but you provide "
+                "structure with space group #{}".format(transformation_type, sgn))
+        elif transformation_type == self.GENERAL_CUBIC_TETRAGONAL:
+            if not is_general_cubic(atoms):
+                raise ValueError(
+                    "Only FCC(sg #225), BCC (sg #229), SC (#221), DIAM(#227) or cubic-cell structures are acceptable for {} transformation type, but you provide "
+                    "structure with space group #{} and cell {}".format(transformation_type, sgn, atoms.get_cell()))
         volume = self.basis_ref.get_volume() / len(self.basis_ref)
         a0 = (volume * 2.) ** (1. / 3.)  # lattice constant for BCC
         chem_symbols = list(set(self.basis_ref.get_chemical_symbols()))
@@ -60,9 +117,8 @@ class TransformationPathGenerator(JobGenerator):
         elem = chem_symbols[0]
         self.type = self._job.input["transformation_type"]
         self.element = elem
-        self.a0 = a0
         self.num_of_point = self._job.input["num_points"]
-        self._ref_job_prepared=True
+        self._ref_job_prepared = True
 
     def deformation_path(self):
         # TODO: ensure that high-symmetry points are also within the list
@@ -74,6 +130,8 @@ class TransformationPathGenerator(JobGenerator):
             path_indices = np.linspace(0.8, 5., self.num_of_point)
         elif self.type == TransformationPathGenerator.HEXAGONAL:
             path_indices = np.linspace(-0.5, 1.8, self.num_of_point)
+        elif self.type == TransformationPathGenerator.GENERAL_CUBIC_TETRAGONAL:
+            path_indices = np.linspace(0.2, 2.6, self.num_of_point)
         else:
             raise NotImplementedError("Transformation path <" + str(self.type) + "> is not implemented")
         return path_indices
@@ -90,7 +148,8 @@ class TransformationPathGenerator(JobGenerator):
         if indices_only:
             return path_indices
         else:
-            a0 = self.a0
+            volume = self.basis_ref.get_volume() / len(self.basis_ref)
+            a0 = (volume * 2.) ** (1. / 3.)  # lattice constant for BCC
             base_atoms = Atoms([self.element] * 2, scaled_positions=[(0, 0, 0), (1 / 2., 1. / 2, 1. / 2)],
                                cell=[(a0, 0, 0), (0, a0, 0), (0, 0, a0)], pbc=True)
             structures = []
@@ -99,6 +158,32 @@ class TransformationPathGenerator(JobGenerator):
                 structures.append(atoms)
             atoms = gen_tetr(a0, base_atoms, p=1.0)
             self.base_structure = atoms
+            return path_indices, structures
+
+    def generate_general_tetra_path(self, indices_only=False):
+        def gen_tetr(a0, base_atoms, p):
+
+            a = (a0 ** 3 / p) ** (1. / 3.)
+            c = a0 ** 3 / a ** 2.
+            atoms = base_atoms.copy()
+            atoms.set_cell([(a, 0, 0), (0, a, 0), (0, 0, c)], scale_atoms=True)
+            return atoms
+
+        path_indices = self.deformation_path()
+        if indices_only:
+            return path_indices
+        else:
+            base_atoms = to_cubic_atoms(self.basis_ref)
+            a0 = base_atoms.cell[0, 0]
+
+            structures = []
+            for p in path_indices:
+                atoms = gen_tetr(a0, base_atoms, p)
+                structures.append(atoms)
+
+            atoms = gen_tetr(a0, base_atoms, p=1.0)
+            self.base_structure = atoms
+
             return path_indices, structures
 
     def generate_ortho_path(self, indices_only=False):
@@ -115,7 +200,8 @@ class TransformationPathGenerator(JobGenerator):
         if indices_only:
             return path_indices
         else:
-            a0 = self.a0
+            volume = self.basis_ref.get_volume() / len(self.basis_ref)
+            a0 = (volume * 2.) ** (1. / 3.)  # lattice constant for BCC
             structures = []
             for p in path_indices:
                 atoms = gen_orth(a0, p)
@@ -141,7 +227,8 @@ class TransformationPathGenerator(JobGenerator):
         if indices_only:
             return path_indices
         else:
-            a0 = self.a0
+            volume = self.basis_ref.get_volume() / len(self.basis_ref)
+            a0 = (volume * 2.) ** (1. / 3.)  # lattice constant for BCC
             base_atoms = Atoms([self.element] * 2, scaled_positions=[(0, 0, 0), (0.5, 0.5, 0.5)],
                                cell=[(a0, 0, 0), (0, a0, 0), (0, 0, a0)], pbc=True)
             cell = np.array(base_atoms.get_cell())
@@ -177,7 +264,8 @@ class TransformationPathGenerator(JobGenerator):
         if indices_only:
             return path_indices
         else:
-            a0 = self.a0
+            volume = self.basis_ref.get_volume() / len(self.basis_ref)
+            a0 = (volume * 2.) ** (1. / 3.)  # lattice constant for BCC
             structures = []
             for p in path_indices:
                 atoms = gen_hex(a0, p)
@@ -194,6 +282,8 @@ class TransformationPathGenerator(JobGenerator):
             return self.generate_trigo_path(indices_only)
         elif self.type == TransformationPathGenerator.HEXAGONAL:
             return self.generate_hex_path(indices_only)
+        elif self.type == TransformationPathGenerator.GENERAL_CUBIC_TETRAGONAL:
+            return self.generate_general_tetra_path(indices_only)
         else:
             raise NotImplementedError("Transformation path <" + str(self.type) + "> is not implemented")
 

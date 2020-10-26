@@ -61,11 +61,13 @@ def phonopy_to_atoms(ph_atoms):
     Returns: ASE-like Atoms object
 
     """
-    return Atoms(
+    atoms = Atoms(
         symbols=list(ph_atoms.get_chemical_symbols()),
         positions=list(ph_atoms.get_positions()),
         cell=list(ph_atoms.get_cell()),
     )
+    atoms.set_initial_magnetic_moments(ph_atoms.get_magnetic_moments())
+    return atoms
 
 
 def atoms_to_phonopy(atom):
@@ -78,11 +80,13 @@ def atoms_to_phonopy(atom):
         Phonopy Atoms
 
     """
-    return PhonopyAtoms(
+    ph_atoms = PhonopyAtoms(
         symbols=list(atom.get_chemical_symbols()),
         scaled_positions=list(atom.get_scaled_positions()),
         cell=list(atom.get_cell()),
     )
+    ph_atoms.set_magnetic_moments(atom.get_initial_magnetic_moments())
+    return ph_atoms
 
 
 class PhonopyJobGenerator(JobGenerator):

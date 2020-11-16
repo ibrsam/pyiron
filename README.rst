@@ -13,13 +13,9 @@ pyiron
     :target: https://anaconda.org/conda-forge/pyiron/
     :alt: Release_Date
 
-.. image:: https://travis-ci.org/pyiron/pyiron.svg?branch=master
-    :target: https://travis-ci.org/pyiron/pyiron
+.. image:: https://github.com/pyiron/pyiron/workflows/Python%20package/badge.svg
+    :target: https://github.com/pyiron//pyiron/actions
     :alt: Build Status
-
-.. image:: https://ci.appveyor.com/api/projects/status/wfdgqkxca1i19xcq/branch/master?svg=true
-    :target: https://ci.appveyor.com/project/pyiron-runner/pyiron/branch/master
-    :alt: Build status
 
 .. image:: https://anaconda.org/conda-forge/pyiron/badges/downloads.svg
     :target: https://anaconda.org/conda-forge/pyiron/
@@ -93,18 +89,11 @@ Finally a first lammps calculation can be executed by::
 
 Getting started:
 ----------------
-For users - test pyiron with mybinder:
+Test pyiron with mybinder:
 
 .. image:: https://mybinder.org/badge_logo.svg
      :target: https://mybinder.org/v2/gh/pyiron/pyiron/master
      :alt: mybinder
- 
- 
-For developers - browse the pyiron code with gitpod: 
-
-.. image:: https://gitpod.io/button/open-in-gitpod.svg
-     :target: https://gitpod.io/#https://github.com/pyiron/pyiron
-     :alt: Gitpod
 
 
 License and Acknowledgments

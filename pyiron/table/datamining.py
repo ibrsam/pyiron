@@ -33,9 +33,11 @@ from pyiron.table.funct import (
     get_job_name,
     get_job_id,
     get_energy_tot,
+    get_energy_pot,
     get_energy_free,
     get_energy_int,
     get_energy_tot_per_atom,
+    get_energy_pot_per_atom,
     get_energy_free_per_atom,
     get_energy_int_per_atom,
     get_e_conv_level,
@@ -90,9 +92,11 @@ class FunctionContainer(object):
             get_job_name,
             get_job_id,
             get_energy_tot,
+            get_energy_pot,
             get_energy_free,
             get_energy_int,
             get_energy_tot_per_atom,
+            get_energy_pot_per_atom,
             get_energy_free_per_atom,
             get_energy_int_per_atom,
             get_e_conv_level,
@@ -666,12 +670,11 @@ class TableJob(GenericJob):
 
     @staticmethod
     def convert_numpy_to_list(table_dict):
-        for k,v in table_dict.items():
-            for k1,v1 in v.items():
-                if isinstance(v1,np.ndarray):
+        for k, v in table_dict.items():
+            for k1, v1 in v.items():
+                if isinstance(v1, np.ndarray):
                     v[k1] = v1.tolist()
         return table_dict
-
 
     def to_hdf(self, hdf=None, group_name=None):
         """
@@ -775,7 +778,6 @@ class TableJob(GenericJob):
         self.status.running = True
         self.update_table()
         self.status.finished = True
-        self.run()
 
     def update_table(self, job_status_list=None):
         """

@@ -2,6 +2,7 @@
 # Copyright (c) Max-Planck-Institut für Eisenforschung GmbH - Computational Materials Design (CM) Department
 # Distributed under the terms of "New BSD License", see the LICENSE file.
 
+from collections import OrderedDict
 import numpy as np
 import warnings
 import scipy.constants
@@ -64,6 +65,7 @@ class Outcar(object):
         stresses = self.get_stresses(filename=filename, si_unit=False, lines=lines)
         n_elect = self.get_nelect(filename=filename, lines=lines)
         e_fermi_list, vbm_list, cbm_list = self.get_band_properties(filename=filename, lines=lines)
+        elastic_constants = self.get_elastic_constants(filename=filename, lines=lines)
         try:
             irreducible_kpoints = self.get_irreducible_kpoints(
                 filename=filename, lines=lines
@@ -98,7 +100,7 @@ class Outcar(object):
         self.parse_dict["e_fermi_list"] = e_fermi_list
         self.parse_dict["vbm_list"] = vbm_list
         self.parse_dict["cbm_list"] = cbm_list
-
+        self.parse_dict["elastic_constants"] = elastic_constants
         try:
             self.parse_dict["pressures"] = (
                 np.average(stresses[:, 0:3], axis=1) * KBAR_TO_EVA
@@ -785,11 +787,12 @@ class Outcar(object):
             lines=lines, filename=filename, trigger=fermi_trigger
         )
         fermi_level_list = list()
-        vbm_level_list = list()
-        cbm_level_list = list()
+        vbm_level_dict = OrderedDict()
+        cbm_level_dict = OrderedDict()
         for ind in fermi_trigger_indices:
             fermi_level_list.append(float(lines[ind].strip().split()[2]))
         band_trigger = "band No.  band energies     occupation"
+        is_spin_polarized = False
         for n, ind in enumerate(fermi_trigger_indices):
             if n == len(fermi_trigger_indices) - 1:
                 trigger_indices, lines_new = _get_trigger(
@@ -801,19 +804,57 @@ class Outcar(object):
                 )
             band_data = list()
             for ind in trigger_indices:
+                if "spin component" in lines_new[ind-3]:
+                    is_spin_polarized = True
                 for line in lines_new[ind+1:]:
                     data = line.strip().split()
                     if len(data) != 3:
                         break
                     band_data.append([float(d) for d in data[1:]])
-            if len(band_data) > 0:
-                band_energy, band_occ = [np.array(band_data)[:, i] for i in range(2)]
-                args = np.argsort(band_energy)
-                band_occ = band_occ[args]
-                band_energy = band_energy[args]
-                cbm_level_list.append(band_energy[np.abs(band_occ) < 1e-6][0])
-                vbm_level_list.append(band_energy[np.abs(band_occ) >= 1e-6][-1])
-        return np.array(fermi_level_list), np.array(vbm_level_list), np.array(cbm_level_list)
+            if is_spin_polarized:
+                band_data_per_spin = [np.array(band_data[0:int(len(band_data)/2)]).tolist(),
+                                      np.array(band_data[int(len(band_data)/2):]).tolist()]
+            else:
+                band_data_per_spin = [band_data]
+            for spin, band_data in enumerate(band_data_per_spin):
+                if spin in cbm_level_dict.keys():
+                    pass
+                else:
+                    cbm_level_dict[spin] = list()
+                if spin in vbm_level_dict.keys():
+                    pass
+                else:
+                    vbm_level_dict[spin] = list()
+                if len(band_data) > 0:
+                    band_energy, band_occ = [np.array(band_data)[:, i] for i in range(2)]
+                    args = np.argsort(band_energy)
+                    band_occ = band_occ[args]
+                    band_energy = band_energy[args]
+                    cbm_bool = np.abs(band_occ) < 1e-6
+                    if any(cbm_bool):
+                        cbm_level_dict[spin].append(band_energy[np.abs(band_occ) < 1e-6][0])
+                    else:
+                        cbm_level_dict[spin].append(band_energy[-1])
+                    vbm_level_dict[spin].append(band_energy[np.abs(band_occ) >= 1e-6][-1])
+        return np.array(fermi_level_list), np.array([val for val
+                                                     in vbm_level_dict.values()]), np.array([val
+                                                                                             for val in
+                                                                                             cbm_level_dict.values()])
+
+    @staticmethod
+    def get_elastic_constants(filename="OUTCAR", lines=None):
+        lines = _get_lines_from_file(filename=filename, lines=lines)
+        trigger_indices = _get_trigger(lines=lines, filename=filename, trigger="TOTAL ELASTIC MODULI (kBar)", return_lines=False)
+        if len(trigger_indices) != 1:
+            return None
+        else:
+            start_index = trigger_indices[0] + 3
+            end_index = start_index + 6
+            elastic_constants = []
+            for line in lines[start_index:end_index]:
+                elastic_constants.append(line.split()[1:])
+            elastic_GPa = np.array(elastic_constants, dtype=float) / 10
+            return elastic_GPa
 
     @staticmethod
     def _get_positions_and_forces_parser(
@@ -875,14 +916,18 @@ class Outcar(object):
 
         """
         cells = []
-        for j in trigger_indices:
-            cell = []
-            for line in lines[j + 5 : j + 8]:
-                line = line.strip()
-                line = _clean_line(line)
-                cell.append([float(l) for l in line.split()[0:3]])
-            cells.append(cell)
-        return np.array(cells)
+        try:
+            for j in trigger_indices:
+                cell = []
+                for line in lines[j + 5: j + 8]:
+                    line = line.strip()
+                    line = _clean_line(line)
+                    cell.append([float(l) for l in line.split()[0:3]])
+                cells.append(cell)
+            return np.array(cells)
+        except ValueError:
+            warnings.warn("Unable to parse the cells from the OUTCAR file")
+            return
 
 
 def _clean_line(line):

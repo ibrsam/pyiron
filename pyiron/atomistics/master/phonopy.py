@@ -94,9 +94,23 @@ class PhonopyJobGenerator(JobGenerator):
         """
         supercells = self._job.phonopy.get_supercells_with_displacements()
         return [
-            ["supercell_phonon_%d" % ind, phonopy_to_atoms(sc)]
+            ["{}_{}".format(self._job.ref_job.job_name, ind), self._restore_magmoms(phonopy_to_atoms(sc))]
             for ind, sc in enumerate(supercells)
         ]
+
+    def _restore_magmoms(self, structure):
+        """
+        Args:
+            structure (pyiron.atomistics.structure.atoms): input structure
+
+        Returns:
+            structure (pyiron.atomistics.structure.atoms): output structure with magnetic moments
+        """
+        if any(self._job.structure.get_initial_magnetic_moments()!=None):
+            magmoms = self._job.structure.get_initial_magnetic_moments()
+            magmoms = np.tile(magmoms, np.prod(np.diagonal(self._job._phonopy_supercell_matrix())).astype(int))
+            structure.set_initial_magnetic_moments(magmoms)
+        return structure
 
     @staticmethod
     def job_name(parameter):
@@ -120,7 +134,7 @@ class PhonopyJob(AtomisticParallelMaster):
         self.__name__ = "PhonopyJob"
         self.__version__ = "0.0.1"
         self.input["interaction_range"] = (10.0, "Minimal size of supercell, Ang")
-        self.input["primitive_matrix"] = ("none", "'none' or 'auto'")
+        self.input["primitive_matrix"] = (None, "None or 'auto'")
         self.input["supercell"] = ("range", "supercell size ('range' or [x,y,z])")
         self.input["factor"] = (
             VaspToTHz,
@@ -155,7 +169,7 @@ class PhonopyJob(AtomisticParallelMaster):
                 self.phonopy = Phonopy(
                     unitcell=self._phonopy_unit_cell,
                     supercell_matrix=self._phonopy_supercell_matrix(),
-                    primitive_matrix= None if self.input["primitive_matrix"]=="none" else self.input["primitive_matrix"],
+                    primitive_matrix=self.input["primitive_matrix"],
                     factor=self.input["factor"],
                 )
                 self.phonopy.generate_displacements(distance=self.input["displacement"])

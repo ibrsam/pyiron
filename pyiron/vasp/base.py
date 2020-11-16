@@ -14,6 +14,7 @@ from pyiron.vasp.potential import VaspPotential, VaspPotentialFile, VaspPotentia
 from pyiron.atomistics.structure.atoms import Atoms, CrystalStructure
 from pyiron_base import Settings, GenericParameters
 from pyiron.vasp.outcar import Outcar
+from pyiron.vasp.oszicar import Oszicar
 from pyiron.vasp.procar import Procar
 from pyiron.vasp.structure import read_atoms, write_poscar, vasp_sorter
 from pyiron.vasp.vasprun import Vasprun as Vr
@@ -326,6 +327,9 @@ class VaspBase(GenericDFTJob):
             }
         }
 
+    def get_kpoints(self):
+        return [int(v) for v in self.input.kpoints[3].split()]
+
     def set_input_to_read_only(self):
         """
         This function enforces read-only mode for the input classes, but it has to be implement in the individual
@@ -415,6 +419,12 @@ class VaspBase(GenericDFTJob):
             max_i_steps = int(self["input/incar/data_dict"]["Value"][ind])
         else:
             max_i_steps = 0
+        if "ALGO" in self["input/incar/data_dict"]["Parameter"]:
+            ind = self["input/incar/data_dict"]["Parameter"].index("ALGO")
+            algo = str(self["input/incar/data_dict"]["Value"][ind])
+            if algo.upper() in ["EIGENVAL", "EXACT"]:
+                if max_e_steps == 1:
+                    return True
         scf_energies = self["output/generic/dft/scf_energy_free"]
         if scf_energies is None:
             scf_energies = self["output/outcar/scf_energies"]
@@ -1353,21 +1363,6 @@ class VaspBase(GenericDFTJob):
         else:
             return None
 
-    def get_electronic_structure(self):
-        """
-        Gets the electronic structure instance from the hdf5 file
-
-        Returns:
-                pyiron.atomistics.waves.electronic.ElectronicStructure instance
-        """
-        if not self.status.finished:
-            return
-        else:
-            with self.project_hdf5.open("output") as ho:
-                es_obj = ElectronicStructure()
-                es_obj.from_hdf(ho)
-            return es_obj
-
     def get_charge_density(self):
         """
         Gets the charge density from the hdf5 file. This value is normalized by the volume
@@ -1847,6 +1842,7 @@ class Output:
     def __init__(self):
         self._structure = None
         self.outcar = Outcar()
+        self.oszicar = Oszicar()
         self.generic_output = GenericOutput()
         self.description = (
             "This contains all the output static from this particular vasp run"
@@ -1886,6 +1882,8 @@ class Output:
         vasprun_working, outcar_working = False, False
         if not ("OUTCAR" in files_present or "vasprun.xml" in files_present):
             raise IOError("Either the OUTCAR or vasprun.xml files need to be present")
+        if "OSZICAR" in files_present:
+            self.oszicar.from_file(filename=posixpath.join(directory, "OSZICAR"))
         if "OUTCAR" in files_present:
             self.outcar.from_file(filename=posixpath.join(directory, "OUTCAR"))
             outcar_working = True
@@ -1907,6 +1905,7 @@ class Output:
         if outcar_working:
             log_dict["temperature"] = self.outcar.parse_dict["temperatures"]
             log_dict["pressures"] = self.outcar.parse_dict["pressures"]
+            log_dict["elastic_constants"] = self.outcar.parse_dict["elastic_constants"]
             self.generic_output.dft_log_dict["n_elect"] = self.outcar.parse_dict[
                 "n_elect"
             ]
@@ -2030,7 +2029,6 @@ class Output:
                         ]
                 except ValueError:
                     pass
-
         # important that we "reverse sort" the atoms in the vasp format into the atoms in the atoms class
         self.generic_output.log_dict = log_dict
         if vasprun_working:
@@ -2067,6 +2065,11 @@ class Output:
                     for e_free in self.generic_output.dft_log_dict["scf_energy_free"]
                 ]
             )
+            # Overwrite energy_free with much better precision from the OSZICAR file
+            if "energy_pot" in self.oszicar.parse_dict.keys():
+                if np.array_equal(self.generic_output.dft_log_dict["energy_free"],
+                                  np.round(self.oszicar.parse_dict["energy_pot"], 8)):
+                    self.generic_output.dft_log_dict["energy_free"] = self.oszicar.parse_dict["energy_pot"]
             self.generic_output.dft_log_dict["energy_zero"] = np.array(
                 [
                     e_zero[-1]

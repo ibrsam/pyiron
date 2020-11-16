@@ -48,16 +48,22 @@ class SxExtOpt(InteractiveInterface):
         ssa=False,
     ):
         if ionic_forces is not None:
-            warnings.warn(('ionic_forces is deprecated as of vers. 0.3.0.'
-                           +'It is not guaranteed to be in service in vers. 0.4.0.'
-                           +'Use ionic_force_tolerance instead'),
-                           DeprecationWarning)
+            warnings.warn(
+                (
+                        'ionic_forces is deprecated as of vers. 0.3.0.' +
+                        'It is not guaranteed to be in service in vers. 0.4.0.' +
+                        'Use ionic_force_tolerance instead'
+                ), DeprecationWarning
+            )
             ionic_force_tolerance = ionic_forces
         if ionic_energy is not None:
-            warnings.warn(('ionic_energy is deprecated as of vers. 0.3.0.'
-                           +'It is not guaranteed to be in service in vers. 0.4.0.'
-                           +'Use ionic_energy_tolerance instead'),
-                           DeprecationWarning)
+            warnings.warn(
+                (
+                        'ionic_energy is deprecated as of vers. 0.3.0.' +
+                        'It is not guaranteed to be in service in vers. 0.4.0.' +
+                        'Use ionic_energy_tolerance instead'
+                ), DeprecationWarning
+            )
             ionic_energy_tolerance = ionic_energy
         super().__init__()
         self.__name__ = "SxExtOpt"
@@ -69,7 +75,7 @@ class SxExtOpt(InteractiveInterface):
         self.working_directory = working_directory
         if executable is None:
             executable = Executable(
-                path_binary_codes=s._configuration["resource_paths"],
+                path_binary_codes=s.resource_paths,
                 codename="SxExtOptInteractive",
                 module=self.__module__.split(".")[1],
                 overwrite_nt_flag=False,
@@ -226,7 +232,7 @@ class SxExtOpt(InteractiveInterface):
             self._interactive_write_line("%.16f %.16f %.16f" % (c[0], c[1], c[2]))
 
     def _write_number_of_atoms(self, count):
-        self._interactive_write_line("%s" % (count))
+        self._interactive_write_line("%s" % count)
 
     def _write_positions(self, positions, elements):
         for pos, el in zip(positions, elements):
@@ -244,7 +250,7 @@ class SxExtOpt(InteractiveInterface):
     def _read_positions(self, count):
         return [
             [float(c) for c in self._interactive_library_read.readline().split()]
-            for i in range(count)
+            for _ in range(count)
         ]
 
     def set_forces(self, forces):
@@ -309,7 +315,6 @@ class SxExtOptInteractive(InteractiveWrapper):
         self.output = SxExtOptOutput(job=self)
         self._interactive_interface = None
         self._interactive_number_of_steps = 0
-        self._coarse_run = False
 
     def set_input_to_read_only(self):
         """
@@ -340,10 +345,6 @@ class SxExtOptInteractive(InteractiveWrapper):
             executable=self.executable.executable_path,
             ssa=self.input['ssa'],
         )
-        try:
-            self._coarse_run = self.ref_job.coarse_run
-        except AttributeError:
-            pass
         self.status.running = True
         self._logger.info("job status: %s", self.status)
         new_positions = self.ref_job.structure.positions
@@ -358,25 +359,9 @@ class SxExtOptInteractive(InteractiveWrapper):
             if self.ref_job.server.run_mode.interactive:
                 self._logger.debug("SxExtOpt: step start!")
                 self.ref_job.run()
-                if (
-                    self._coarse_run
-                    and np.max(np.linalg.norm(self.get_forces(), axis=-1), axis=-1)
-                    < self.input["ionic_force_tolerance"]
-                ):
-                    self._coarse_run = False
-                    self.ref_job.coarse_run = False
-                    self.ref_job.run()
                 self._logger.debug("SxExtOpt: step finished!")
             else:
                 self.ref_job.run(delete_existing_job=True)
-                if (
-                    self._coarse_run
-                    and np.max(np.linalg.norm(self.get_forces(), axis=-1), axis=-1)
-                    < self.input["ionic_force_tolerance"]
-                ):
-                    self._coarse_run = False
-                    self.ref_job.coarse_run = False
-                    self.ref_job.run(delete_existing_job=True)
             self._interactive_interface.set_forces(forces=self.get_forces())
             new_positions = self._interactive_interface.get_positions()
             self._interactive_number_of_steps += 1

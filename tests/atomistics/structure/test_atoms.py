@@ -8,7 +8,7 @@ import os
 import warnings
 from pyiron.atomistics.structure.atom import Atom
 from pyiron.atomistics.structure.atoms import Atoms, CrystalStructure
-from pyiron.atomistics.structure.generator import create_ase_bulk, create_surface, create_hkl_surface, create_structure
+from pyiron.atomistics.structure.factory import StructureFactory
 from pyiron.atomistics.structure.sparse_list import SparseList
 from pyiron.atomistics.structure.periodic_table import PeriodicTable, ChemicalElement
 from pyiron_base import FileHDFio, ProjectHDFio, Project
@@ -38,6 +38,7 @@ class TestAtoms(unittest.TestCase):
         C = Atom("C").element
         cls.C3 = Atoms([C, C, C], positions=[[0, 0, 0], [0, 0, 2], [0, 2, 0]])
         cls.C2 = Atoms(2 * [Atom("C")])
+        cls.struct_factory = StructureFactory()
 
     def setUp(self):
         # These atoms are reset before every test.
@@ -719,18 +720,6 @@ class TestAtoms(unittest.TestCase):
         neigh = basis.get_neighborhood([0, 0, 0.1])
         self.assertEqual(neigh.distances[0], 0.1)
 
-    def test_get_neighbors_update_vectors(self):
-        structure = CrystalStructure(elements='Fe', lattice_constants=1, bravais_basis='bcc', pbc=True)
-        neigh = structure.get_neighbors(num_neighbors=8)
-        with self.assertRaises(AssertionError):
-            neigh.update_vectors()
-        structure = CrystalStructure(elements='Fe', lattice_constants=1, bravais_basis='bcc', pbc=True).repeat(2)
-        neigh = structure.get_neighbors(num_neighbors=8)
-        self.assertAlmostEqual(np.min(neigh.distances), np.sqrt(3)/2)
-        structure.positions[0] += 0.01
-        neigh.update_vectors()
-        self.assertAlmostEqual(np.min(neigh.distances), np.sqrt(3)*0.49)
-
     def test_get_neighbors(self):
         basis = Atoms(symbols="FeFe", positions=[3 * [0], 3 * [1]], cell=2 * np.eye(3), pbc=True)
         neigh = basis.get_neighbors(num_neighbors=58)
@@ -748,17 +737,14 @@ class TestAtoms(unittest.TestCase):
         self.assertAlmostEqual(neigh.distances[0][8], np.sqrt(27))
         basis.pbc = True
         basis.set_repeat(2)
-        with self.assertRaises(ValueError):
-            basis.get_neighbors(cutoff_radius=10)
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
-            neigh = basis.get_neighbors(boundary_width_factor=0.1)
+            neigh = basis.get_neighbors(width_buffer=0.1)
             self.assertGreaterEqual(len(w), 1)
         with self.assertRaises(ValueError):
-            neigh = basis.get_neighbors(boundary_width_factor=0.001, num_neighbors=100)
+            neigh = basis.get_neighbors(width_buffer=0.001, num_neighbors=100)
         basis = Atoms(symbols="FeFe", positions=[3 * [0], 3 * [1]], cell=2 * np.eye(3))
         neigh = basis.get_neighbors(num_neighbors=1)
-        self.assertEqual(neigh._boundary_layer_width, 0)
 
     def test_get_neighbors_by_distance(self):
         basis = Atoms(symbols="FeFeFe", positions=[3 * [0], 3 * [1], [0, 0, 1]], cell=2 * np.eye(3), pbc=True)
@@ -771,15 +757,11 @@ class TestAtoms(unittest.TestCase):
         self.assertEqual(neigh.distances[2][0], 1.)
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
-            basis.get_neighbors_by_distance(cutoff_radius=1.5, num_neighbors_estimate_buffer=0)
-            self.assertGreaterEqual(len(w), 1)
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
             neigh = basis.get_neighbors_by_distance(cutoff_radius=1.5, num_neighbors=5)
             self.assertGreaterEqual(len(w), 1)
         self.assertEqual(len(neigh.distances[2]), 5)
         with self.assertRaises(ValueError):
-            basis.get_neighbors_by_distance(num_neighbors_estimate_buffer=-1)
+            basis.get_neighbors_by_distance(width_buffer=-1)
         # Check with large cell with few atoms
         dx = 0.7
         r_O = [0, 0, 0]
@@ -794,7 +776,7 @@ class TestAtoms(unittest.TestCase):
     def test_get_number_of_neighbors_in_sphere(self):
         basis = Atoms(symbols="FeFeFe", positions=[3 * [0], 3 * [1], [0, 0, 1]], cell=2 * np.eye(3), pbc=True)
         num_neighbors_per_atom = basis.get_numbers_of_neighbors_in_sphere(cutoff_radius=2,
-                                                                          num_neighbors_estimate_buffer=0)
+                                                                          width_buffer=0)
         self.assertEqual(num_neighbors_per_atom[0], 10)
         self.assertEqual(num_neighbors_per_atom[1], 12)
         self.assertEqual(num_neighbors_per_atom[2], 6)
@@ -804,7 +786,7 @@ class TestAtoms(unittest.TestCase):
             self.assertGreaterEqual(len(w), 1)
         self.assertEqual(num_neighbors_per_atom[2], 5)
         with self.assertRaises(ValueError):
-            basis.get_numbers_of_neighbors_in_sphere(num_neighbors_estimate_buffer=-1)
+            basis.get_numbers_of_neighbors_in_sphere(width_buffer=-1)
 
     def test_get_shell_matrix(self):
         structure = CrystalStructure(elements='Fe', lattice_constants=2.83, bravais_basis='bcc')
@@ -917,7 +899,7 @@ class TestAtoms(unittest.TestCase):
         basis = Atoms("FeFe", positions=[[0.01, 0, 0], [0.5, 0.5, 0.5]], cell=np.identity(3), pbc=True)
         with self.assertRaises(ValueError):
             basis.get_extended_positions(-0.1)
-        self.assertTrue(np.array_equal(basis.get_extended_positions(0)[0], basis.positions))
+        self.assertTrue(np.array_equal(basis.get_extended_positions(0), basis.positions))
 
     def test_get_equivalent_points(self):
         basis = Atoms("FeFe", positions=[[0.01, 0, 0], [0.5, 0.5, 0.5]], cell=np.identity(3))
@@ -1289,19 +1271,19 @@ class TestAtoms(unittest.TestCase):
             basis_1 += basis_2
             self.assertEqual(len(w), 1)
         a_0 = 2.86
-        structure = create_structure('Fe', 'bcc', a_0)
+        structure = self.struct_factory.crystal('Fe', 'bcc', a_0)
         carbon = Atoms(symbols=['C'], positions=[[0, 0, 0.5 * a_0]])
         structure += carbon
         self.assertEqual(carbon.indices[0], 0)
 
     def test_append(self):
         a_0 = 2.86
-        structure = create_structure('Fe', 'bcc', a_0)
+        structure = self.struct_factory.crystal('Fe', 'bcc', a_0)
         carbon = Atoms(symbols=['C'], positions=[[0, 0, 0.5 * a_0]], pbc=True)
         with warnings.catch_warnings(record=True) as w:
             structure.append(carbon)
             self.assertEqual(len(w), 0)
-            structure = create_structure('Fe', 'bcc', a_0)
+            structure = self.struct_factory.crystal('Fe', 'bcc', a_0)
             carbon.cell = np.random.rand(3)
             structure.append(carbon)
             self.assertEqual(len(w), 1)
@@ -1483,19 +1465,19 @@ class TestAtoms(unittest.TestCase):
         self.assertEqual(struct.get_chemical_formula(), 'Mg4')
 
     def test_static_functions(self):
-        Al_bulk = create_ase_bulk("Al")
+        Al_bulk = self.struct_factory.ase_bulk("Al")
         self.assertIsInstance(Al_bulk, Atoms)
         self.assertTrue(all(Al_bulk.pbc))
-        surface = create_surface("Al", "fcc111", size=(4, 4, 4), vacuum=10)
+        surface = self.struct_factory.surface("Al", "fcc111", size=(4, 4, 4), vacuum=10)
         self.assertTrue(all(surface.pbc))
-        surface = create_surface("Al", "fcc111", size=(4, 4, 4), vacuum=10, pbc=[True, True, False])
+        surface = self.struct_factory.surface("Al", "fcc111", size=(4, 4, 4), vacuum=10, pbc=[True, True, False])
         self.assertTrue(all(surface.pbc[0:2]))
         self.assertFalse(surface.pbc[2])
         self.assertIsInstance(surface, Atoms)
-        hkl_surface = create_hkl_surface(Al_bulk, [10, 8, 7], layers=20, vacuum=10)
+        hkl_surface = self.struct_factory.surface_hkl(Al_bulk, [10, 8, 7], layers=20, vacuum=10)
         self.assertIsInstance(hkl_surface, Atoms)
         self.assertTrue(all(hkl_surface.pbc))
-        hkl_surface_center = create_hkl_surface(
+        hkl_surface_center = self.struct_factory.surface_hkl(
             Al_bulk, [10, 8, 7], layers=20, vacuum=10, center=True
         )
         mean_z = np.mean([p[2] for p in hkl_surface_center.positions])

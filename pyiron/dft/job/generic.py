@@ -2,10 +2,11 @@
 # Copyright (c) Max-Planck-Institut für Eisenforschung GmbH - Computational Materials Design (CM) Department
 # Distributed under the terms of "New BSD License", see the LICENSE file.
 
+import warnings
+
 import numpy as np
 from pyiron.atomistics.job.atomistic import AtomisticGenericJob, MapFunctions as AtomisticMapFunctions
 from pyiron.dft.waves.electronic import ElectronicStructure
-import warnings
 
 __author__ = "Jan Janssen"
 __copyright__ = (
@@ -170,11 +171,11 @@ class GenericDFTJob(AtomisticGenericJob):
         return snapshot
 
     def set_mixing_parameters(
-        self,
-        method=None,
-        n_pulay_steps=None,
-        density_mixing_parameter=None,
-        spin_mixing_parameter=None,
+            self,
+            method=None,
+            n_pulay_steps=None,
+            density_mixing_parameter=None,
+            spin_mixing_parameter=None,
     ):
         raise NotImplementedError(
             "set_mixing_parameters is not implemented for this code."
@@ -236,17 +237,17 @@ class GenericDFTJob(AtomisticGenericJob):
         return get_k_mesh_by_density(cell=cell, k_mesh_spacing=k_mesh_spacing)
 
     def set_kpoints(
-        self,
-        mesh=None,
-        scheme="MP",
-        center_shift=None,
-        symmetry_reduction=True,
-        manual_kpoints=None,
-        weights=None,
-        reciprocal=True,
-        k_mesh_spacing=None,
-        n_path=None,
-        path_name=None,
+            self,
+            mesh=None,
+            scheme="MP",
+            center_shift=None,
+            symmetry_reduction=True,
+            manual_kpoints=None,
+            weights=None,
+            reciprocal=True,
+            k_mesh_spacing=None,
+            n_path=None,
+            path_name=None,
     ):
         """
         Function to setup the k-points
@@ -270,6 +271,7 @@ class GenericDFTJob(AtomisticGenericJob):
             if mesh is not None:
                 warnings.warn("mesh value is overwritten by k_mesh_spacing")
             mesh = self.get_k_mesh_by_cell(k_mesh_spacing=k_mesh_spacing)
+            print("Update mesh:", mesh)
         self.k_mesh_spacing = k_mesh_spacing
         self.k_mesh_center_shift = center_shift
         self.reduce_kpoint_symmetry = symmetry_reduction
@@ -292,42 +294,42 @@ class GenericDFTJob(AtomisticGenericJob):
         )
 
     def calc_static(
-        self,
-        electronic_steps=100,
-        algorithm=None,
-        retain_charge_density=False,
-        retain_electrostatic_potential=False,
+            self,
+            electronic_steps=100,
+            algorithm=None,
+            retain_charge_density=False,
+            retain_electrostatic_potential=False,
     ):
         self._generic_input["fix_symmetry"] = True
         super(GenericDFTJob, self).calc_static()
 
     def calc_minimize(
-        self,
-        electronic_steps=60,
-        ionic_steps=100,
-        max_iter=None,
-        pressure=None,
-        algorithm=None,
-        retain_charge_density=False,
-        retain_electrostatic_potential=False,
-        ionic_energy_tolerance=None,
-        ionic_force_tolerance=None,
-        ionic_energy=None,
-        ionic_forces=None,
-        volume_only=False,
+            self,
+            electronic_steps=60,
+            ionic_steps=100,
+            max_iter=None,
+            pressure=None,
+            algorithm=None,
+            retain_charge_density=False,
+            retain_electrostatic_potential=False,
+            ionic_energy_tolerance=None,
+            ionic_force_tolerance=None,
+            ionic_energy=None,
+            ionic_forces=None,
+            volume_only=False,
     ):
         self._generic_input["fix_symmetry"] = True
         super(GenericDFTJob, self).calc_minimize(max_iter=max_iter, pressure=pressure)
 
     def calc_md(
-        self,
-        temperature=None,
-        n_ionic_steps=1000,
-        n_print=1,
-        time_step=1.0,
-        retain_charge_density=False,
-        retain_electrostatic_potential=False,
-        **kwargs
+            self,
+            temperature=None,
+            n_ionic_steps=1000,
+            n_print=1,
+            time_step=1.0,
+            retain_charge_density=False,
+            retain_electrostatic_potential=False,
+            **kwargs
     ):
         self._generic_input["fix_symmetry"] = False
         super(GenericDFTJob, self).calc_md(
@@ -358,16 +360,16 @@ class GenericDFTJob(AtomisticGenericJob):
         )
 
     def _set_kpoints(
-        self,
-        mesh=None,
-        scheme="MP",
-        center_shift=None,
-        symmetry_reduction=True,
-        manual_kpoints=None,
-        weights=None,
-        reciprocal=True,
-        n_path=None,
-        path_name=None,
+            self,
+            mesh=None,
+            scheme="MP",
+            center_shift=None,
+            symmetry_reduction=True,
+            manual_kpoints=None,
+            weights=None,
+            reciprocal=True,
+            n_path=None,
+            path_name=None,
     ):
         raise NotImplementedError(
             "The set_kpoints function is not implemented for this code."

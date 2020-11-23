@@ -92,16 +92,16 @@ class FHIAims(GenericDFTJob):
             )
 
     def _set_kpoints(
-            self,
-            mesh=None,
-            scheme="GC",
-            center_shift=None,
-            symmetry_reduction=True,
-            manual_kpoints=None,
-            weights=None,
-            reciprocal=True,
-            n_trace=None,
-            trace=None,
+        self,
+        mesh=None,
+        scheme="GC",
+        center_shift=None,
+        symmetry_reduction=True,
+        manual_kpoints=None,
+        weights=None,
+        reciprocal=True,
+        n_path=None,
+        path_name=None,
     ):
         if self.structure is not None:
             is_pbc = np.all(self.structure.pbc)
@@ -115,9 +115,11 @@ class FHIAims(GenericDFTJob):
         else:
             del self.input.control_input["k_grid"]
 
-        if scheme != "GC":
-            raise NotImplementedError(("{} k-points scheme is not (yet) implemented. Only Gamma-centered (GC) is " +
-                                       "possible, but ignored").format(scheme))
+        #TODO: work-around on k-mehs scheme
+
+        # if scheme != "GC":
+        #     raise NotImplementedError(("{} k-points scheme is not (yet) implemented. Only Gamma-centered (GC) is " +
+        #                                "possible, but ignored").format(scheme))
 
         if center_shift is not None:
             if len(center_shift) != 3:
@@ -140,86 +142,86 @@ class FHIAims(GenericDFTJob):
         if weights is not None:
             raise NotImplementedError("weights for k-points is not (yet) implemented for FHIaims interface.")
 
-        if n_trace is not None:
-            raise NotImplementedError("n_trace for k-points is not (yet) implemented for FHIaims interface.")
+        # if n_trace is not None:
+        #     raise NotImplementedError("n_trace for k-points is not (yet) implemented for FHIaims interface.")
+        #
+        # if trace is not None:
+        #     raise NotImplementedError("trace for k-points is not (yet) implemented for FHIaims interface.")
 
-        if trace is not None:
-            raise NotImplementedError("trace for k-points is not (yet) implemented for FHIaims interface.")
-
-    def set_kpoints(
-            self,
-            mesh=None,
-            scheme="GC",
-            center_shift=None,
-            symmetry_reduction=True,
-            manual_kpoints=None,
-            weights=None,
-            reciprocal=True,
-            kpoints_per_angstrom=None,
-            n_trace=None,
-            trace=None,
-            kmesh_density_per_inverse_angstrom=None
-    ):
-        """
-        Function to setup the k-points
-
-        Args:
-            mesh (list): Size of the mesh (ignored if scheme is not set to 'MP' or kpoints_per_angstrom is set)
-            scheme (str): Type of k-point generation scheme (MP/GC(gamma centered)/GP(gamma point)/Manual/Line)
-            center_shift (list): Shifts the center of the mesh from the gamma point by the given vector in relative coordinates
-            symmetry_reduction (boolean): Tells if the symmetry reduction is to be applied to the k-points
-            manual_kpoints (list/numpy.ndarray): Manual list of k-points
-            weights(list/numpy.ndarray): Manually supplied weights to each k-point in case of the manual mode
-            reciprocal (bool): Tells if the supplied values are in reciprocal (direct) or cartesian coordinates (in
-            reciprocal space)
-            kpoints_per_angstrom (float): Number of kpoint per angstrom in each direction
-            n_trace (int): Number of points per trace part for line mode
-            trace (list): ordered list of high symmetry points for line mode
-            kmesh_density_per_inverse_angstrom (float): spacing of kpoints (recommended value is 0.1 for tight settings)
-        """
-
-        if kmesh_density_per_inverse_angstrom is not None:
-            if mesh is not None:
-                warnings.warn("mesh value is overwritten by kmesh_density_per_inverse_angsrtrom")
-
-            self.input.set_kmesh_density(kmesh_density_per_inverse_angstrom)
-
-            if self.structure is not None:
-                is_pbc = np.all(self.structure.pbc)
-                if is_pbc:
-                    self.input.update_kmesh(self.structure)
-                    mesh = get_k_mesh_by_density(self.structure.cell,
-                                                 kmesh_density_per_inverse_angstrom=kmesh_density_per_inverse_angstrom)
-                else:
-                    mesh = None
-        else:
-            if mesh is None:
-                if self.input.kmesh_density_per_inverse_angstrom is not None:
-                    mesh = get_k_mesh_by_density(self.structure.cell,
-                                                 kmesh_density_per_inverse_angstrom=self.input.kmesh_density_per_inverse_angstrom)
-            self.input.set_kmesh_density(kmesh_density_per_inverse_angstrom)
-
-        if kpoints_per_angstrom is not None:
-            if mesh is not None:
-                warnings.warn("mesh value is overwritten by kpoints_per_angstrom")
-            mesh = self.get_k_mesh_by_cell(kpoints_per_angstrom=kpoints_per_angstrom)
-        if mesh is not None:
-            if np.min(mesh) <= 0:
-                raise ValueError("mesh values must be larger than 0")
-        if center_shift is not None:
-            if np.min(center_shift) < 0 or np.max(center_shift) > 1:
-                warnings.warn("center_shift is given in relative coordinates")
-        self._set_kpoints(
-            mesh=mesh,
-            scheme=scheme,
-            center_shift=center_shift,
-            symmetry_reduction=symmetry_reduction,
-            manual_kpoints=manual_kpoints,
-            weights=weights,
-            reciprocal=reciprocal,
-            n_trace=n_trace,
-            trace=trace,
-        )
+    # def set_kpoints(
+    #         self,
+    #         mesh=None,
+    #         scheme="GC",
+    #         center_shift=None,
+    #         symmetry_reduction=True,
+    #         manual_kpoints=None,
+    #         weights=None,
+    #         reciprocal=True,
+    #         kpoints_per_angstrom=None,
+    #         n_trace=None,
+    #         trace=None,
+    #         kmesh_density_per_inverse_angstrom=None
+    # ):
+    #     """
+    #     Function to setup the k-points
+    #
+    #     Args:
+    #         mesh (list): Size of the mesh (ignored if scheme is not set to 'MP' or kpoints_per_angstrom is set)
+    #         scheme (str): Type of k-point generation scheme (MP/GC(gamma centered)/GP(gamma point)/Manual/Line)
+    #         center_shift (list): Shifts the center of the mesh from the gamma point by the given vector in relative coordinates
+    #         symmetry_reduction (boolean): Tells if the symmetry reduction is to be applied to the k-points
+    #         manual_kpoints (list/numpy.ndarray): Manual list of k-points
+    #         weights(list/numpy.ndarray): Manually supplied weights to each k-point in case of the manual mode
+    #         reciprocal (bool): Tells if the supplied values are in reciprocal (direct) or cartesian coordinates (in
+    #         reciprocal space)
+    #         kpoints_per_angstrom (float): Number of kpoint per angstrom in each direction
+    #         n_trace (int): Number of points per trace part for line mode
+    #         trace (list): ordered list of high symmetry points for line mode
+    #         kmesh_density_per_inverse_angstrom (float): spacing of kpoints (recommended value is 0.1 for tight settings)
+    #     """
+    #
+    #     if kmesh_density_per_inverse_angstrom is not None:
+    #         if mesh is not None:
+    #             warnings.warn("mesh value is overwritten by kmesh_density_per_inverse_angsrtrom")
+    #
+    #         self.input.set_kmesh_density(kmesh_density_per_inverse_angstrom)
+    #
+    #         if self.structure is not None:
+    #             is_pbc = np.all(self.structure.pbc)
+    #             if is_pbc:
+    #                 self.input.update_kmesh(self.structure)
+    #                 mesh = get_k_mesh_by_density(self.structure.cell,
+    #                                              kmesh_density_per_inverse_angstrom=kmesh_density_per_inverse_angstrom)
+    #             else:
+    #                 mesh = None
+    #     else:
+    #         if mesh is None:
+    #             if self.input.kmesh_density_per_inverse_angstrom is not None:
+    #                 mesh = get_k_mesh_by_density(self.structure.cell,
+    #                                              kmesh_density_per_inverse_angstrom=self.input.kmesh_density_per_inverse_angstrom)
+    #         self.input.set_kmesh_density(kmesh_density_per_inverse_angstrom)
+    #
+    #     if kpoints_per_angstrom is not None:
+    #         if mesh is not None:
+    #             warnings.warn("mesh value is overwritten by kpoints_per_angstrom")
+    #         mesh = self.get_k_mesh_by_cell(kpoints_per_angstrom=kpoints_per_angstrom)
+    #     if mesh is not None:
+    #         if np.min(mesh) <= 0:
+    #             raise ValueError("mesh values must be larger than 0")
+    #     if center_shift is not None:
+    #         if np.min(center_shift) < 0 or np.max(center_shift) > 1:
+    #             warnings.warn("center_shift is given in relative coordinates")
+    #     self._set_kpoints(
+    #         mesh=mesh,
+    #         scheme=scheme,
+    #         center_shift=center_shift,
+    #         symmetry_reduction=symmetry_reduction,
+    #         manual_kpoints=manual_kpoints,
+    #         weights=weights,
+    #         reciprocal=reciprocal,
+    #         n_trace=n_trace,
+    #         trace=trace,
+    #     )
 
     def calc_static(
             self,
@@ -326,6 +328,7 @@ class FHIAims(GenericDFTJob):
         self.input.control_potential.read_only = True
 
     def write_input(self):
+        self.modify_kpoints()
         # methods, called externally
         self.input.write(structure=self.structure, working_directory=self.working_directory)
 
@@ -501,16 +504,16 @@ class FHIAimsInput:
     def set_kmesh_density(self, kmesh_density_per_inverse_angstrom):
         self.kmesh_density_per_inverse_angstrom = kmesh_density_per_inverse_angstrom
 
-    def update_kmesh(self, structure):
-        if (self.kmesh_density_per_inverse_angstrom is not None) and (structure is not None):
-            if self.kmesh_density_per_inverse_angstrom != 0.0:
-                k_mesh = get_k_mesh_by_density(
-                    structure.get_cell(),
-                    kmesh_density_per_inverse_angstrom=self.kmesh_density_per_inverse_angstrom,
-                )
-                print("kmesh_density_per_inverse_angstrom = ", self.kmesh_density_per_inverse_angstrom)
-                print("Update k-mesh =", k_mesh)
-                self.control_input["k_grid"] = " ".join([str(int(m)) for m in k_mesh])
+    # def update_kmesh(self, structure):
+    #     if (self.kmesh_density_per_inverse_angstrom is not None) and (structure is not None):
+    #         if self.kmesh_density_per_inverse_angstrom != 0.0:
+    #             k_mesh = get_k_mesh_by_density(
+    #                 structure.get_cell(),
+    #                 kmesh_density_per_inverse_angstrom=self.kmesh_density_per_inverse_angstrom,
+    #             )
+    #             print("kmesh_density_per_inverse_angstrom = ", self.kmesh_density_per_inverse_angstrom)
+    #             print("Update k-mesh =", k_mesh)
+    #             self.control_input["k_grid"] = " ".join([str(int(m)) for m in k_mesh])
 
     def write(self, structure, working_directory):
         self.control_potential.set_structure(structure)

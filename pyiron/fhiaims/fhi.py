@@ -257,13 +257,12 @@ class FHIAims(GenericDFTJob):
                       ionic_steps=DEFAULT_IONIC_STEPS,
                       max_iter=None,
                       pressure=None,
-                      algorithm="bfgs",
+                      algorithm="bfgs_textbook",
                       retain_charge_density=False,
                       retain_electrostatic_potential=False,
-                      ionic_force_tolerance=1e-2
-                      # volume_only
+                      ionic_force_tolerance=1e-2,
+                      init_hess = "reciprocal_lattice"
                       ):
-        self._generic_input["fix_symmetry"] = True
         super(GenericDFTJob, self).calc_minimize(max_iter=max_iter, pressure=pressure)
 
         if electronic_steps is not None:
@@ -278,6 +277,10 @@ class FHIAims(GenericDFTJob):
             raise NotImplementedError(
                 "`max_iter` is ignored".format(DEFAULT_IONIC_STEPS))
 
+        is_pbc = np.all(self.structure.pbc)
+        if init_hess is not None and is_pbc:
+            self.input.control_input["init_hess"] = init_hess
+
         if pressure is None:  # atomic positions only
             # relax_geometry type tolerance
             algorithm_str = "none" if algorithm is None else str(algorithm)
@@ -290,7 +293,6 @@ class FHIAims(GenericDFTJob):
         elif pressure == 0.0:  # full relaxation
             # relax_geometry type tolerance
             # relax_unit_cell type
-            is_pbc = np.all(self.structure.pbc)
             if not is_pbc:
                 raise ValueError("Couldn't relax non-periodic structure")
 
@@ -387,8 +389,8 @@ class FHIAims(GenericDFTJob):
 
     def set_pbc_settings(self):
         # kpoints, stress
-        if self.input.kmesh_density_per_inverse_angstrom is not None:
-            self.set_kpoints(kmesh_density_per_inverse_angstrom=self.input.kmesh_density_per_inverse_angstrom)
+        if self.k_mesh_spacing is not None:
+            self.set_kpoints(k_mesh_spacing=self.k_mesh_spacing)
         else:
             if not self.input.control_input["k_grid"]:
                 self.set_kpoints(mesh=[1, 1, 1])

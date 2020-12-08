@@ -389,7 +389,10 @@ class FHIAims(GenericDFTJob):
 
     def set_pbc_settings(self):
         # kpoints, stress
-        if self.k_mesh_spacing is not None:
+        if self.input.kmesh_density_per_inverse_angstrom is not None:
+            # for backward compatibility
+            self.set_kpoints(k_mesh_spacing=self.input.kmesh_density_per_inverse_angstrom)
+        elif self.k_mesh_spacing is not None:
             self.set_kpoints(k_mesh_spacing=self.k_mesh_spacing)
         else:
             if not self.input.control_input["k_grid"]:

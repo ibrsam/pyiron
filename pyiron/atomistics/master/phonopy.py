@@ -378,6 +378,44 @@ class PhonopyJob(AtomisticParallelMaster):
         """
         return np.real_if_close(self.phonopy.get_dynamical_matrix_at_q(q))
 
+    def calc_band_structure(self, path, labels, npoints=101):
+        """
+        Written by Eslam Ibrahim eslam.saadibrahim@rub.de
+
+        Calculate band structure with automatic path through reciprocal space.
+
+        Can only be called after job is finished.
+
+        Args:
+            path: (list):  path to calculate the bandstructure
+            labels: (list):  points of the given path
+            npoints: (int, optional):  Number of sample points between high symmetry points.
+
+        Returns:
+            :class:`dict` of the results from phonopy under the following keys
+                - 'qpoints':  list of (npoints, 3), samples paths in reciprocal space
+                - 'distances':  list of (npoints,), distance along the paths in reciprocal space
+                - 'frequencies':  list of (npoints, band), phonon frequencies
+                - 'eigenvectors':  list of (npoints, band, band//3, 3), phonon eigenvectors
+                - 'group_velocities': list of (npoints, band), group velocities
+            where band is the number of bands (number of atoms * 3).  Each entry is a list of arrays, and each array
+            corresponds to one path between two high-symmetry points automatically picked by Phonopy and may be of
+            different length than other paths.  As compared to the phonopy output this method also reshapes the
+            eigenvectors so that they directly have the same shape as the underlying structure.
+
+        Raises:
+            :exception:`ValueError`: method is called on a job that is not finished or aborted
+        """
+        if not self.status.finished:
+            raise ValueError("Job must be successfully run, before calling this method.")
+
+        from phonopy.phonon.band_structure import get_band_qpoints_and_path_connections
+        qpoints, connections = get_band_qpoints_and_path_connections(path, npoints=npoints)
+        self.phonopy.run_band_structure(qpoints, path_connections=connections, labels=labels)
+
+        q_points, distances, frequencies, eigenvectors = self.phonopy.get_band_structure()
+        return q_points, distances, frequencies, eigenvectors
+
     def plot_dos(self, ax=None, *args, **qwargs):
         """
 
